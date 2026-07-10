@@ -1,10 +1,10 @@
 # Security and Threat Model
 
-> **STATUS: PROPOSED DESIGN — AWAITING BANTAY REVIEW AND OWNER APPROVAL**
+> **STATUS: ACCEPTED BY OWNER (2026-07-10, with D-006 … D-019) — NOT YET IMPLEMENTED**
 >
 > Author: Claude Code / BUNSO (Fable 5), per accepted decision D-005.
-> Date: 2026-07-10
-> Companion to [FINAL_ARCHITECTURE_DESIGN.md](FINAL_ARCHITECTURE_DESIGN.md). Design only — no configuration, deployment, or operational action is authorized by this document.
+> Date: 2026-07-10. Revised following Bantay's required revisions R1–R7.
+> Companion to [FINAL_ARCHITECTURE_DESIGN.md](FINAL_ARCHITECTURE_DESIGN.md). Design only — no configuration, deployment, or operational action is authorized by this document. The §18 pre-remote-access checklist remains a hard gate requiring its own owner GO.
 
 ---
 

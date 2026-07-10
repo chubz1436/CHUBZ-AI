@@ -1,6 +1,10 @@
 # Worker Roles
 
 > **STATUS: PLANNED — NOT YET IMPLEMENTED**
+>
+> **Temporary assignment in force (D-019):** BUNSO using Fable 5 is the temporary primary implementation worker while Fable 5 quota remains available. Codex is the backup and handoff implementation worker during this period and remains the documented long-term primary implementer. **BUNSO and Codex must never edit the same files concurrently.** Because BUNSO cannot independently review its own implementation, review of BUNSO-authored code falls to Bantay and Codex. The table below describes the long-term steady state.
+>
+> Once the worker registry exists, manifests become the authoritative worker-role definition and this file becomes a projection of them (D-011).
 
 | Worker | Planned responsibility | Boundary |
 | --- | --- | --- |

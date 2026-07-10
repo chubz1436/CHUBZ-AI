@@ -1,10 +1,10 @@
 # Final Architecture Design
 
-> **STATUS: PROPOSED DESIGN — AWAITING BANTAY REVIEW AND OWNER APPROVAL**
+> **STATUS: ACCEPTED BY OWNER (decisions D-006 … D-018, 2026-07-10) — NOT YET IMPLEMENTED**
 >
 > Author: Claude Code / BUNSO (Fable 5), lead and final designer per accepted decision D-005.
-> Date: 2026-07-10
-> Scope: Design only. Nothing in this document authorizes implementation, deployment, network configuration, or production access.
+> Date: 2026-07-10. Revised following Bantay's required revisions R1–R7; accepted by Kenneth / CHUBZ the same day.
+> Scope: Design only. Acceptance of this design does **not** authorize implementation, deployment, network configuration, or production access — each phase and bounded subtask carries its own explicit owner GO.
 
 ---
 
@@ -259,7 +259,7 @@ Legend — **Confirmed**: validated on this PC. **Likely**: documented mechanism
 | Bantay / ChatGPT | none sanctioned for the ChatGPT app; OpenAI API is a *different* surface than the Bantay persona | **Unsupported programmatically (U-5)** | review only (never write) | **manual-relay via Review Package (primary mode)** |
 | Future workers | declared in manifest | n/a | per manifest | manual-relay required in every manifest |
 
-**Honesty note:** as of this design, *zero* connectors are Confirmed. Phase 0 includes Antigravity validating U-1/U-2 before Codex builds the first CLI adapter. The system must display each worker's real connector tier in the Worker Health view — never pretend a manual worker is automated. Manual-relay workers are never represented as automatically controlled or cryptographically authenticated: their results are labeled **owner-attested** throughout the UI, capture records, and review packages, and their default capability is review/design/text output only.
+**Honesty note:** as of this design, *zero* connectors are Confirmed. Phase 0 includes Antigravity validating U-1/U-2 before the currently assigned implementation worker begins the first CLI adapter. Under D-019, that worker is temporarily BUNSO/Fable 5 while quota remains available; Codex is the backup and handoff worker. The system must display each worker's real connector tier in the Worker Health view — never pretend a manual worker is automated. Manual-relay workers are never represented as automatically controlled or cryptographically authenticated: their results are labeled **owner-attested** throughout the UI, capture records, and review packages, and their default capability is review/design/text output only.
 
 ### 8.3 Worker manifest schema (registry contract) `PROPOSED`
 
@@ -609,11 +609,11 @@ No DNS, tunnel, certificate, or hosting configuration is performed or implied by
 
 ---
 
-## 22. Proposed Architecture Decisions Requiring Owner Approval
+## 22. Architecture Decisions — Owner Verdicts Recorded
 
-These are drafted for the decision log but are **not owner-accepted**. Do not treat as approved. D-005 is untouched.
+> **UPDATE (2026-07-10): all proposals below were ACCEPTED BY OWNER and recorded as decisions D-006 … D-018 in [DECISIONS.md](DECISIONS.md), which now governs.** The `RECOMMENDED` / `PROPOSED` / `OWNER DECISION REQUIRED` labels in the table are preserved as a historical record of how each item was presented before acceptance; they no longer indicate pending status. The owner additionally promoted D-001 … D-004 to accepted and added D-019 (temporary implementation-worker assignment). D-005 is untouched.
 
-| Proposed ID | Decision | Label |
+| Proposed ID (now D-00x) | Decision | Label as originally presented |
 |---|---|---|
 | P-006 | Topology: local Control Plane + separate outbound-only Local Bridge on the owner's PC; web app served by Control Plane (§5) | `OWNER DECISION REQUIRED` |
 | P-007 | Technology stack per §17 (TypeScript / React / Fastify / SQLite / Zod / WebSocket / pnpm monorepo) | `OWNER DECISION REQUIRED` |
