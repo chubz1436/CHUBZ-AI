@@ -1,6 +1,6 @@
 # Decisions
 
-> **STATUS: DECISIONS D-001 … D-019 ACCEPTED BY OWNER — IMPLEMENTATION NOT YET STARTED**
+> **STATUS: DECISIONS D-001 … D-020 ACCEPTED BY OWNER — M1A IMPLEMENTATION IN REVIEW**
 
 This file is the decision log. An entry marked **ACCEPTED BY OWNER** records a decision Kenneth / CHUBZ has approved. Acceptance of a design decision does **not** by itself authorize implementation, deployment, infrastructure configuration, or production access; each implementation phase carries its own explicit owner GO.
 
@@ -127,3 +127,12 @@ Decisions D-006 … D-018 correspond to proposals P-006 … P-018 in [FINAL_ARCH
 - **Concurrency boundary:** BUNSO and Codex must **never edit the same files concurrently.** Exactly one implementation worker holds a given file or package at a time; handoff is explicit and owner-visible.
 - **Boundary:** This decision reassigns implementation-worker identity only. It does not authorize coding to begin. Each implementation phase and bounded subtask still requires its own explicit owner GO, and Bantay review plus Antigravity Phase 0 validation precede any coding.
 - **Note:** D-005 remains in force. BUNSO's design authority is unchanged; this decision adds a temporary implementation role on top of it. When BUNSO implements, independent review of that work falls to Bantay and Codex, since BUNSO cannot be its own independent reviewer.
+
+## D-020 — Task-state count and cancellation clarification
+
+- **Status:** ACCEPTED BY OWNER
+- **Decision date:** 2026-07-10
+- **Clarification 1 — state count:** The accepted task-state model contains **fourteen** visible states. The word "twelve" in D-017 and in the original FINAL_ARCHITECTURE_DESIGN.md §10 prose was a counting defect. The authoritative state list is the fourteen states shown in the accepted §10 state diagram and implemented in `TASK_STATES` (`packages/shared`). D-017's historical text is not rewritten; this decision supersedes its count.
+- **Clarification 2 — cancellation semantics:** States where worker dispatch or integration may be in flight — `AWAITING_DISPATCH`, `RUNNING`, `APPROVED` — cancel through `CANCELLING → CANCELLED`, completed only on the Bridge's kill/termination confirmation. Passive states with no process requiring termination — `DRAFT`, `CONTEXT_PREPARING`, `RESULT_CAPTURED`, `AWAITING_APPROVAL`, `REVISION_REQUESTED`, and ordinary `BLOCKED` — may be cancelled directly to `CANCELLED` by the owner only. Terminal states remain terminal.
+- **Clarification 3 — execution-unknown:** `BLOCKED(execution-unknown)` is excluded from ordinary unblocking and from ordinary cancellation until reconciliation is recorded. Its only exits are the owner-reviewed reconciliation outcomes `confirmed-completed` (→ COMPLETED), `confirmed-failed` (→ FAILED), and `confirmed-not-executed` (→ CONTEXT_PREPARING with a new immutable attempt), each requiring recorded owner-reconciliation evidence. No automated actor may resolve execution-unknown.
+- **Boundary:** This decision clarifies the M1A contract only; it does not authorize additional implementation scope.

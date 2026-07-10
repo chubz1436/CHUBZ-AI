@@ -317,9 +317,9 @@ Rules:
 
 ---
 
-## 10. Task State Machine `PROPOSED`
+## 10. Task State Machine `ACCEPTED (D-017, clarified by D-020)`
 
-Twelve states. From the mission's candidate list, `Waiting for Worker` is merged into `RUNNING` (a display substate, not a state) and `Awaiting Review` is merged into `AWAITING_APPROVAL` (one human gate; `/review` can be invoked while in it). `Cancel Requested` is kept as the transient `CANCELLING` because process-tree kills are asynchronous.
+Fourteen states (count corrected per D-020 — the original "twelve" was a counting defect; the diagram below was always the authoritative list). From the mission's candidate list, `Waiting for Worker` is merged into `RUNNING` (a display substate, not a state) and `Awaiting Review` is merged into `AWAITING_APPROVAL` (one human gate; `/review` can be invoked while in it). `Cancel Requested` is kept as the transient `CANCELLING` because process-tree kills are asynchronous.
 
 ```mermaid
 stateDiagram-v2
@@ -349,25 +349,31 @@ stateDiagram-v2
     CANCELLED --> [*]
 ```
 
-### Transition authority
+### Transition authority (clarified by D-020 and the M1A review corrections)
 
-| Transition | Allowed actor |
-|---|---|
-| DRAFT → CONTEXT_PREPARING | Owner |
-| CONTEXT_PREPARING → AWAITING_DISPATCH / BLOCKED | System (orchestrator) |
-| AWAITING_DISPATCH → RUNNING | System, only after Bridge acks dispatch |
-| RUNNING → RESULT_CAPTURED / FAILED | Bridge (reported), System (records) |
-| any active → CANCELLING | Owner only |
-| CANCELLING → CANCELLED | Bridge (confirms kill) |
-| RESULT_CAPTURED → AWAITING_APPROVAL | System |
-| AWAITING_APPROVAL → APPROVED / REJECTED / REVISION_REQUESTED | **Owner only** |
-| APPROVED → COMPLETED | System + Bridge (with grant) |
-| BLOCKED → AWAITING_DISPATCH | System (auto) or Owner (override) |
-| FAILED/REVISION_REQUESTED → CONTEXT_PREPARING | Owner (creates new **Task Attempt**) |
+Authority model: **the Control Plane records state and is the actor for system transitions; Bridge-origin facts are mandatory typed evidence, never an alternative actor.** One uncorroborated party can never satisfy a joint-authority transition — the Control Plane cannot move a task without the Bridge's evidence, and the Bridge is not a transition actor at all.
+
+| Transition | Allowed actor | Required evidence |
+|---|---|---|
+| DRAFT → CONTEXT_PREPARING | Owner | — |
+| CONTEXT_PREPARING → AWAITING_DISPATCH / BLOCKED | Control Plane (orchestrator) | — (BLOCKED requires a reason code) |
+| AWAITING_DISPATCH → RUNNING | Control Plane | `bridge-dispatch-ack` — attempting dispatch alone never marks a task RUNNING |
+| RUNNING → RESULT_CAPTURED / FAILED | Control Plane | `bridge-execution-report` |
+| AWAITING_DISPATCH / RUNNING / APPROVED → CANCELLING | **Owner only** (in-flight dispatch, execution, or integration must be terminated by the Bridge) | — |
+| DRAFT / CONTEXT_PREPARING / RESULT_CAPTURED / AWAITING_APPROVAL / REVISION_REQUESTED / ordinary BLOCKED → CANCELLED | **Owner only** (passive states cancel directly) | — |
+| CANCELLING → CANCELLED | Control Plane | `bridge-kill-confirmation` |
+| RESULT_CAPTURED → AWAITING_APPROVAL | Control Plane | — |
+| AWAITING_APPROVAL → APPROVED / REJECTED / REVISION_REQUESTED | **Owner only** | — |
+| APPROVED → COMPLETED / FAILED | Control Plane | `bridge-integration-report` **and** `grant-verified` |
+| BLOCKED (ordinary reasons) → AWAITING_DISPATCH | Control Plane (auto) or Owner (override) — **never for `execution-unknown`** | — |
+| BLOCKED(execution-unknown) → COMPLETED / FAILED / CONTEXT_PREPARING | **Owner only**, via a recorded reconciliation outcome (D-020) | `owner-reconciliation` |
+| FAILED/REVISION_REQUESTED → CONTEXT_PREPARING | Owner (creates new **Task Attempt**) | — |
 
 Retries and revisions never mutate a previous attempt's captured record — each attempt is immutable once left `RUNNING`. Abandoned tasks (no owner action for a configurable period, default 14 days) are auto-moved to `BLOCKED` with a reminder; stale approvals expire (§ security doc).
 
 `BLOCKED` carries a machine-readable **reason code** rather than spawning extra visible states: `queue-lock`, `conflict`, `missing-context`, `policy`, `abandoned`, and `execution-unknown`. `execution-unknown` is set when a privileged operation (e.g., finalizing an approved commit) was journaled as *started* but its completion cannot be proven after a crash or disconnect — the task then requires owner-reviewed reconciliation and is **never blindly retried** (§16).
+
+**Execution-unknown reconciliation (D-020):** `BLOCKED(execution-unknown)` is not an ordinary blocked state. Ordinary unblock, re-dispatch, and even cancellation are refused for every actor — cancellation must not hide an unresolved execution outcome. The only exits are three explicit, owner-only reconciliation outcomes recorded with `owner-reconciliation` evidence: **`confirmed-completed`** → COMPLETED (the operation demonstrably happened), **`confirmed-failed`** → FAILED (it demonstrably did not finish), or **`confirmed-not-executed`** → CONTEXT_PREPARING with a **new immutable attempt** (it demonstrably never started). The previous attempt remains immutable in every case, and no automated actor may reconcile.
 
 ---
 

@@ -3,8 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "description": "CHUBZ AI Command Center monorepo (M1A: shared contracts only)",
+  "packageManager": "pnpm@11.11.0",
   "engines": {
-    "node": ">=20"
+    "node": ">=20",
+    "pnpm": ">=11"
   },
   "scripts": {
     "test": "pnpm -r run test",
