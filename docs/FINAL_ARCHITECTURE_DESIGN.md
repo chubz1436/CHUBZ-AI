@@ -17,9 +17,9 @@ The CHUBZ AI Command Center is designed as **two small local services on the own
 
 The owner uses one chat interface (browser on PC or phone). Remote access is added in a later phase through **Cloudflare Tunnel + Cloudflare Access** in front of a single subdomain, `ai.ichubz.com`. No local port is ever exposed to the internet.
 
-Workers connect through a **manifest-driven adapter system** with four connector types (`cli-headless`, `local-process`, `http-api`, `manual-relay`). Because no worker's programmatic interface has been validated yet, **manual relay is a first-class connector**: the system prepares the bounded prompt, the owner pastes it to the worker, pastes the reply back, and every downstream feature (capture, diff, review package, Bridge Log) works identically. This guarantees a working system on day one for *all* workers while CLI adapters are validated one at a time.
+Workers connect through a **manifest-driven adapter system** with four connector types (`cli-headless`, `local-process`, `http-api`, `manual-relay`). Because no worker's programmatic interface has been validated yet, **manual relay is a first-class connector**: the system prepares the bounded prompt, the owner pastes it to the worker, pastes the reply back, and the same task-state, approval, review-package, redaction, and Bridge Log workflow applies to the imported result — with honestly weaker supervision and provenance guarantees than an automated connector (§7.2). This guarantees a working system on day one for *all* workers while CLI adapters are validated one at a time.
 
-Every consequential action passes a typed approval gate enforced by **short-lived, single-use, task-bound capability grants** — cryptographically checked by the Bridge, not just written policy. The MVP deliberately refuses (does not merely gate) deployment, database, MikroTik, DNS, credential, and server-restart actions.
+Every consequential action passes a typed approval gate enforced by **short-lived, single-use, task-bound capability grants** checked by the Bridge. In Phase 1 these are HMAC-signed — an integrity and anti-replay control, stated honestly as *not* a proof of owner presence, since the Control Plane holds the signing key; a Bridge-verifiable passkey approval proof is a hard prerequisite before remote access (SECURITY_AND_THREAT_MODEL.md §8). The MVP deliberately refuses (does not merely gate) deployment, database, MikroTik, DNS, credential, and server-restart actions.
 
 The MVP proves one vertical slice: one owner, one project, one bridge, one CLI connector plus manual relay, task tracking, capture, diffs, one approval gate, automatic Bridge Log, and a downloadable Bantay Review Package.
 
@@ -121,7 +121,7 @@ Key properties:
 
 - **Control Plane** binds to `127.0.0.1` only. In Phase 1 the owner browses to `http://localhost:7801`. In Phase 2, `cloudflared` (running on the same PC) makes an *outbound* connection to Cloudflare and forwards authenticated requests to that loopback port. At no point does the PC accept unsolicited inbound connections.
 - **Local Bridge** has *no listening socket at all*. It dials out to the Control Plane's loopback WebSocket endpoint and authenticates with its enrollment credential. This means the same code path works later if the Control Plane ever moves off-machine (hybrid), without redesign.
-- **Why separate processes on one PC** rather than one bundled service: the Bridge is the highest-risk component (it executes processes and writes files). Separation gives a real trust boundary (different OS process, different credential, independently restartable, independently killable by the emergency stop), and it preserves the architecture if the owner later wants the Control Plane on a home server while the Bridge stays on the dev PC.
+- **Why separate processes on one PC** rather than one bundled service: the Bridge is the highest-risk component (it executes processes and writes files). In Phase 1, while both processes run under the same Windows user, this separation is a **strong failure and responsibility boundary** (different OS process, different credential, independently restartable, independently killable by the emergency stop) but only a **limited security boundary** — code running as the same user could interfere with either process. Privilege separation (restricted worker account, NTFS ACLs, Job Objects) is a hard prerequisite before remote access (SECURITY_AND_THREAT_MODEL.md §12, §18). The split also preserves the architecture if the owner later wants the Control Plane on a home server while the Bridge stays on the dev PC.
 - **Why not cloud-hosted control plane**: violates local-first (D-001), creates a cloud datastore of prompts/diffs/audit data, adds hosting cost and a second operational environment. A **cloud relay** variant (thin stateless WebSocket relay, all state still local) is documented as the fallback if Cloudflare Tunnel proves unsuitable — see §5.1.
 
 ### 5.1 Secure remote connectivity comparison `RECOMMENDED: Cloudflare Tunnel + Access`
@@ -212,16 +212,16 @@ flowchart LR
 3. Command parser validates syntax → Orchestrator creates `Task` (state `DRAFT` → `CONTEXT_PREPARING`) and a `CommandEvent`.
 4. Context Assembler gathers only approved `ProjectContextSource` entries for the project, passes them through the Secret Redactor, and builds the bounded worker prompt. Task → `AWAITING_DISPATCH`.
 5. Orchestrator checks queue/locks (§16), then sends a **dispatch message** to the Bridge containing: task id, attempt id, worker id, connector config reference, prompt, and a **read+workspace-write grant** scoped to the task workspace.
-6. Bridge Grant Verifier checks the grant (signature, expiry, single-use, scope). Workspace Manager creates a Git worktree on branch `task/<id>`. Process Supervisor launches the worker via its adapter with cwd pinned to the worktree. Task → `RUNNING`.
+6. Bridge Grant Verifier checks the grant (signature, expiry, single-use, scope). Workspace Manager creates a Git worktree on branch `task/<id>` from the project's **managed clone** (§12) — never from the owner's own checkout. Process Supervisor launches the worker via its adapter with cwd pinned to the worktree. Task → `RUNNING`.
 7. Capture Pipeline streams stdout/stderr (redacted) to the Control Plane; UI shows live status.
 8. Worker exits (or times out per manifest). Capture Pipeline records: response text, changed files (`git status` in the worktree), unified diff (`git diff`), any test output it was configured to run. Task → `RESULT_CAPTURED` → `AWAITING_APPROVAL`.
 9. Control Plane builds the approval card + review package. Owner reviews diff/tests in the side panel.
-10. Owner types `/go`. Approval Engine matches it to the **single currently displayed pending action**, records an `ApprovalDecision`, issues an **integration grant** (e.g., "merge branch task/42 into main in project X"), and the Bridge executes exactly that. Task → `APPROVED` → `COMPLETED`.
+10. Owner types `/go`. Approval Engine matches it to the **single currently displayed pending action**, records an `ApprovalDecision`, and issues an **integration grant** (e.g., "finalize task/42 as an approved commit and patch in project X's managed repository"). The Bridge executes exactly that: the approved result is preserved as a task commit and exported patch in the managed workspace — **the owner's own working copy and checked-out branch are never modified**. Applying the patch to the owner's real project is a separate, explicitly displayed bounded action (§12). Task → `APPROVED` → `COMPLETED`.
 11. Bridge Log Projector writes/updates the task's Markdown entry. Done — the owner never copied a file, made a diff, or edited a log.
 
-### 7.2 Manual-relay path (identical guarantees, human transport)
+### 7.2 Manual-relay path (same workflow after import, weaker guarantees)
 
-Steps 1–4 identical. At step 5 the adapter type is `manual-relay`, so instead of launching a process, the system presents a **Relay Card**: the fully assembled prompt with a copy button and an upload/paste box. The owner pastes it into the worker (e.g., Bantay in ChatGPT), pastes the reply back (or uploads files the worker produced into the task workspace via the Files view). From step 8 onward the flow is identical: capture, diff of any workspace changes, approval, Bridge Log. The task state machine does not distinguish transport.
+Steps 1–4 identical. At step 5 the adapter type is `manual-relay`, so instead of launching a process, the system presents a **Relay Card**: the fully assembled prompt with a copy button and an upload/paste box. The owner pastes it into the worker (e.g., Bantay in ChatGPT), pastes the reply back (or uploads files the worker produced into the task workspace via the Files view). From step 8 onward the same *workflow* applies to the imported content: task states, redaction, approval records, review packages, and Bridge Log entries are produced identically. What manual relay **cannot** provide — and is never claimed to — is execution supervision, cryptographic worker identity, command capture, file provenance, cancellation, or filesystem enforcement. The result is recorded as **"owner-attested manual relay"**: the owner's attestation *is* the identity and provenance. By default a manual-relay worker's capability is **review/design/text-output only**; file changes from a manual worker enter the workspace solely through an explicit, reviewed artifact-import step.
 
 ### 7.3 `/compare`
 
@@ -242,7 +242,7 @@ Steps 1–4 identical. At step 5 the adapter type is `manual-relay`, so instead 
 | `cli-headless` | Spawn a CLI in non-interactive mode inside the task worktree; parse stdout (prefer structured/JSON output modes) | Phase 1 (one worker) |
 | `local-process` | Long-lived local process/daemon with stdio or local IPC protocol | Phase 3+ `DEFERRED` |
 | `http-api` | Call a provider HTTP API with a locally stored key | Phase 3+ `DEFERRED` |
-| `manual-relay` | System prepares prompt; owner transports it; owner returns response/files | **Phase 1 (all workers)** |
+| `manual-relay` | System prepares prompt; owner transports it and attests the returned response; text-output by default, file changes only via explicit artifact import | **Phase 1 (all workers)** |
 | `browser-controlled` | Automation of a worker's web UI | `DEFERRED` — high fragility and ToS risk; explicitly out of scope until owner decides |
 
 ### 8.2 Capability and connector matrix
@@ -259,7 +259,7 @@ Legend — **Confirmed**: validated on this PC. **Likely**: documented mechanism
 | Bantay / ChatGPT | none sanctioned for the ChatGPT app; OpenAI API is a *different* surface than the Bantay persona | **Unsupported programmatically (U-5)** | review only (never write) | **manual-relay via Review Package (primary mode)** |
 | Future workers | declared in manifest | n/a | per manifest | manual-relay required in every manifest |
 
-**Honesty note:** as of this design, *zero* connectors are Confirmed. Phase 0 includes Antigravity validating U-1/U-2 before Codex builds the first CLI adapter. The system must display each worker's real connector tier in the Worker Health view — never pretend a manual worker is automated.
+**Honesty note:** as of this design, *zero* connectors are Confirmed. Phase 0 includes Antigravity validating U-1/U-2 before Codex builds the first CLI adapter. The system must display each worker's real connector tier in the Worker Health view — never pretend a manual worker is automated. Manual-relay workers are never represented as automatically controlled or cryptographically authenticated: their results are labeled **owner-attested** throughout the UI, capture records, and review packages, and their default capability is review/design/text output only.
 
 ### 8.3 Worker manifest schema (registry contract) `PROPOSED`
 
@@ -367,6 +367,8 @@ stateDiagram-v2
 
 Retries and revisions never mutate a previous attempt's captured record — each attempt is immutable once left `RUNNING`. Abandoned tasks (no owner action for a configurable period, default 14 days) are auto-moved to `BLOCKED` with a reminder; stale approvals expire (§ security doc).
 
+`BLOCKED` carries a machine-readable **reason code** rather than spawning extra visible states: `queue-lock`, `conflict`, `missing-context`, `policy`, `abandoned`, and `execution-unknown`. `execution-unknown` is set when a privileged operation (e.g., finalizing an approved commit) was journaled as *started* but its completion cannot be proven after a crash or disconnect — the task then requires owner-reviewed reconciliation and is **never blindly retried** (§16).
+
 ---
 
 ## 11. Data Model `PROPOSED`
@@ -425,7 +427,7 @@ erDiagram
 | Secret Redaction Event | attempt id, detector, location class, count (never the secret) | Control Plane |
 | Worker Health Status | worker id, ts, tier (auto/manual), reachable, last error | Control Plane (Bridge reports) |
 
-**Artifact storage**: file blobs (responses, diffs, test reports, zipped review packages) live under a single data directory, e.g. `<data>/artifacts/<taskId>/<attempt>/...`, content-hashed, referenced from SQLite. Keeps the DB small and artifacts inspectable.
+**Artifact storage**: file blobs (responses, diffs, test reports, zipped review packages) live under a single data directory, e.g. `<data>/artifacts/<taskId>/<attempt>/...`, content-hashed, referenced from SQLite. Keeps the DB small and artifacts inspectable. The store enforces an **owner-configurable total quota** (default 10 GB, warning at 80%) and **owner-controlled retention rules** — default is keep-everything; pruning of rejected/cancelled attempt artifacts happens only through an explicit owner action, never silently.
 
 ---
 
@@ -441,14 +443,16 @@ Comparison for Windows:
 | Filesystem sandboxing / read-only mounts | Deferred — Windows lacks a lightweight, script-friendly equivalent of bind-mount namespaces; approximate with ACL-restricted worker account in a later phase |
 | Worker-specific temp dirs | Adopted as a complement: each attempt gets a private temp dir; worker HOME/TMP env pinned to it |
 
-Mechanics: Bridge creates `worktrees/<project>/task-<id>-a<seq>` from the approved base commit; the worker's cwd and file grant are pinned there; on approval, integration is a merge (fast-forward preferred, else merge commit) performed by the Bridge under the integration grant; on rejection/cancel, the worktree is archived into the review package (if wanted) and pruned. The owner's own working copy is never the worker's workspace.
+Mechanics — **enrollment never touches the original project**: enrolling a Git project creates a **managed clone** under the Bridge's data directory (`<data>/repos/<project>`). The original checkout is *read* at enrollment (and on explicit owner-triggered refresh) but never written; no `git init`, hook, config change, or remote change is ever made to it silently. Worktrees `worktrees/<project>/task-<id>-a<seq>` are created from the managed clone at the approved base commit; the worker's cwd and file grant are pinned there.
 
-Non-Git projects: `OWNER DECISION REQUIRED` — either approve `git init` per project (recommended; the system can propose it as a gated action) or accept degraded copied-workspace mode.
+On approval (Phase 1), the Bridge **finalizes the result as an approved task commit on branch `task/<id>` in the managed repository and exports a patch artifact**. It does not merge into, check out, or otherwise mutate the owner's normal working copy or its checked-out branch. **Applying** the approved patch to the owner's real project (apply / cherry-pick / export) is a separate, explicitly displayed bounded action with its own approval card, scheduled as a later milestone (PHASED_IMPLEMENTATION_PLAN.md, milestone M9); until then the owner applies exported patches manually if desired. On rejection/cancel, the worktree is archived into the review package (if wanted) and pruned. The owner's own working copy is never the worker's workspace and never an automatic write target.
+
+Non-Git projects: enrolled by **snapshot import** into a managed workspace (the original directory is only read). `OWNER DECISION REQUIRED` — either approve initializing Git **inside the managed copy only** (recommended; proposed as a gated action — the original directory is never silently initialized or modified) or accept degraded snapshot-workspace mode (diffs via snapshot compare). Any write-back to the original directory is likewise a separate explicit bounded action.
 
 ### 12.1 Conflict handling — four distinct problems
 
 1. **File-level overlap (pre-merge warning):** the Conflict Detector compares changed-path sets of concurrently open attempts within a project; overlap ⇒ affected tasks flagged and the later integration is `BLOCKED` until the owner sequences them. Cheap, reliable, MVP scope (trivial when concurrency = 1 per project, but the mechanism ships early).
-2. **Git merge conflicts (at integration):** if merge fails, the task returns to `AWAITING_APPROVAL` with a conflict report; resolution is a new task (assigned to a worker or done manually). The system never auto-resolves.
+2. **Git merge conflicts (at finalization or apply):** if the task branch no longer applies cleanly to the current managed base — or, in the later explicit apply action, to the owner's real project — the task returns to `AWAITING_APPROVAL` with a conflict report; resolution is a new task (assigned to a worker or done manually). The system never auto-resolves.
 3. **Concurrent workspace conflicts:** prevented structurally — one worktree per attempt, per-project integration lock (one integration at a time).
 4. **Semantic / decision conflicts:** **not automatable, and this design does not pretend otherwise.** Supported honestly by: attaching the decision log to context, prompting workers to list "assumptions made" in a structured trailer the capture pipeline stores, and surfacing assumption lists side-by-side in `/compare` and review packages for human (owner/Bantay) judgment. Phase 4 may add heuristic cross-checks; they will only ever *flag*, never decide.
 
@@ -463,7 +467,7 @@ Monorepo (pnpm workspaces) — final layout `PROPOSED` (adds one package to the 
 | `packages/shared` | Zod schemas + TS types for every contract: task states, commands, WS protocol messages, worker manifests, grants, capture records, Bridge Log frontmatter. Pure — no I/O. | Runtime logic, network, filesystem |
 | `packages/web-app` | React PWA: chat, panels, approval cards, diff viewer. Talks only to Control Plane API/WS. | Direct file access, secrets, calling providers, business rules |
 | `packages/control-plane` **(new)** | HTTP/WS server, auth, orchestrator, approval engine, registry, context assembler, conflict detector, SQLite, artifact index, Bridge Log projector, review package builder | Spawning workers, writing to project directories, listening on non-loopback interfaces |
-| `packages/local-bridge` | Outbound WS client, grant verification, process supervision, adapters, worktree management, capture, redaction (second layer), idempotency journal, emergency stop execution | Owning task state, approval decisions, any listening socket, reaching the internet except its Control Plane connection and explicitly granted worker endpoints |
+| `packages/local-bridge` | Outbound WS client, grant verification, process supervision, adapters, managed-clone/worktree management, capture, redaction (second layer), operation journal (journal-before-execution, at-most-once), emergency stop execution | Owning task state, approval decisions, any listening socket, reaching the internet except its Control Plane connection and explicitly granted worker endpoints |
 | Event/audit store | Append-only tables inside the Control Plane SQLite (hash-chained) — not a separate service in MVP | Being edited in place |
 | Artifact storage | Local data directory managed by Control Plane | Storing unredacted captures |
 | Bridge Log projector | One-way DB → Markdown | Reading Markdown back as state |
@@ -473,7 +477,7 @@ Monorepo (pnpm workspaces) — final layout `PROPOSED` (adds one package to the 
 
 ## 14. Capture and Review Packages
 
-Captured automatically per attempt (all post-redaction): original owner request; assembled worker prompt; list of approved context sources used; worker response (normalized + raw ref); stdout/stderr; files created/changed/deleted (with hashes); unified diff; commands the adapter executed; test commands + results; approval requests and decisions; errors; final outcome; all timestamps; worker identity + connector tier (auto vs manual — manual transport is recorded as such for provenance honesty).
+Captured automatically per attempt (all post-redaction): original owner request; assembled worker prompt; list of approved context sources used; worker response (normalized + raw ref); stdout/stderr; files created/changed/deleted (with hashes); unified diff; commands the adapter executed; test commands + results; approval requests and decisions; errors; final outcome; all timestamps; and **worker provenance** — for automated connectors: connector type, executable path, version, and executable hash when obtainable; for manual relay: the record is explicitly marked **"owner-attested manual relay"** (the owner's attestation is the provenance; no automated identity claim is made).
 
 **Bantay Review Package** (`/review` or auto-offered at `AWAITING_APPROVAL`): a single ZIP + standalone Markdown summary containing: concise summary (what/why/risk), task metadata, prompt sent, worker response, changed-file list, unified diff/patch, test report, risk flags (gate categories touched, redaction counts, overlap warnings, assumption trailer), approval history, and optionally bounded workspace artifacts. Downloadable from the task panel; small enough to paste or attach to ChatGPT. The package is itself passed through the redactor and recorded as an artifact.
 
@@ -507,16 +511,16 @@ Captured automatically per attempt (all post-redaction): original owner request;
 | Bridge disconnect | CP marks bridge offline; RUNNING tasks stay RUNNING with "bridge offline" badge; Bridge keeps supervising locally and journals results; on reconnect it replays unacked results |
 | Worker timeout | Adapter enforces manifest `timeoutSec`; process tree killed; attempt → FAILED with partial capture flagged `partial: true` |
 | Worker crash | Same as timeout, with exit code recorded |
-| Duplicate command delivery | Idempotency keys on every command; CP replies with the original result; Bridge journal (JRNL) deduplicates dispatches and grant consumption — **a reconnect or retry can never execute a command twice** |
+| Duplicate command delivery | **At-most-once design**: idempotency keys on every command (a replay receives the original result, not re-execution); the Bridge **journals every privileged operation before starting it** and **consumes the grant before privileged execution**, so a re-delivered dispatch or reused grant is refused. Operations move through explicit journal states `prepared → started → completed / failed / execution-unknown` |
 | Stale approval | Approval requests expire (default 30 min) → back to AWAITING_APPROVAL with "expired, re-request" notice; grants expire in ≤10 min and are single-use |
 | Abandoned task | Auto-BLOCKED after 14 days idle, surfaced in `/status` |
-| System restart | CP: SQLite WAL recovery + journal reconciliation; Bridge: on start, kills orphaned worker processes from its journal, reports final states |
+| System restart / crash mid-operation | CP: SQLite WAL recovery + journal reconciliation; Bridge: on start, kills orphaned worker processes and reconciles its operation journal. An operation journaled `started` but not `completed` is **never blindly retried**: for Git operations the Bridge reconciles against actual repository state (does the expected commit/branch exist and match?) and either marks it `completed` or sets the task `BLOCKED(execution-unknown)` for owner-reviewed resolution |
 
 ### Concurrency and resource control `RECOMMENDED`
 
 - **MVP limits:** max **1 RUNNING task per project**, max **2 RUNNING system-wide**; FIFO queue with owner reordering; excess dispatches wait in `AWAITING_DISPATCH`.
 - **Locks:** per-project integration lock (one merge at a time); per-project dispatch lock while concurrency = 1.
-- **Resources:** per-attempt timeout (manifest), process-tree kill on cancel/timeout, max captured-output size (truncate + flag), max workspace disk quota (soft check before dispatch). CPU/memory hard caps via Windows Job Objects are `DEFERRED` to Phase 4 — stated honestly rather than promised.
+- **Resources:** per-attempt timeout (manifest), process-tree kill on cancel/timeout, max captured-output size (truncate + flag), max workspace disk quota (soft check before dispatch), artifact-store quota + retention (§11). Reliable process-tree containment via Job Objects and the restricted worker account are a **prerequisite before Phase 2 remote access** (SECURITY_AND_THREAT_MODEL.md §12); CPU/memory *quota tuning* on top of that is Phase 4.
 - **UI states per worker:** `ready`, `busy (task N)`, `queued (n waiting)`, `blocked`, `offline`, `manual` — shown as chips in the worker selector and health view.
 
 ---
@@ -530,7 +534,7 @@ One language (TypeScript) everywhere; every choice has a fallback.
 | Frontend | **React 18 + TypeScript + Vite**, Tailwind CSS | Largest AI-worker familiarity (fewest implementation errors), huge ecosystem for chat/diff components, Vite is simple on Windows | More boilerplate than Svelte; bundle size | SvelteKit |
 | Backend / control plane | **Node.js LTS + Fastify + TypeScript** | Same language as everything else; Fastify has first-class schema validation + WebSocket plugin; light footprint | Single-threaded CPU limits (fine — orchestration is I/O-bound) | Hono (or Express) |
 | Local bridge runtime | **Node.js LTS + TypeScript** (`execa` for processes) | Shares `packages/shared` types directly; adequate process control on Windows | Process sandboxing weaker than a compiled agent | Go single-binary bridge (stronger isolation, more effort) |
-| Database | **SQLite (WAL) via `better-sqlite3`** | Local-first, zero administration, single-file backup, more than enough scale for one owner | Concurrent-writer limits (irrelevant at this scale) | PostgreSQL (only if multi-user future arrives) |
+| Database | **SQLite (WAL) via `better-sqlite3`** | Local-first, zero administration, safe online backups via the SQLite backup mechanism (`VACUUM INTO` / backup API — never by copying the main file while WAL is active), more than enough scale for one owner | Concurrent-writer limits (irrelevant at this scale) | PostgreSQL (only if multi-user future arrives) |
 | Real-time transport | **WebSocket** (`@fastify/websocket`), event-cursor resync | Bidirectional (bridge protocol needs it), works through Cloudflare Tunnel | Reconnect logic must be written carefully | SSE (UI-only) + HTTP polling |
 | Task queue | **SQLite-backed in-process queue** in the Control Plane | No broker to install/operate; queue state survives restart; transactional with task state | No distributed workers (not needed) | BullMQ + Redis (only if ever distributed) |
 | Local process execution | **`execa` + explicit process-tree kill (`taskkill /T`)**, per-attempt cwd/env pinning | Proven Windows behavior; streams stdout/stderr | Not a security sandbox by itself (see threat model) | Node `child_process` direct |
@@ -541,7 +545,7 @@ One language (TypeScript) everywhere; every choice has a fallback.
 | Logging | **pino** (JSON) → rotating files; audit events hash-chained in SQLite | Structured, fast, greppable; audit separated from debug logs | Log files need rotation config | winston |
 | Testing | **Vitest** (unit/contract) + **Playwright** (UI E2E) | Native TS, fast; Playwright covers the chat flows | E2E maintenance cost | Jest + Cypress |
 | Windows packaging / service | Phase 1: run via `pnpm` scripts in two terminals. Phase 2+: **NSSM** (services) or **Task Scheduler** auto-start | Zero-effort start for MVP; NSSM is the boring standard for Node-as-Windows-service | NSSM is an extra binary to install | node-windows |
-| Mobile / PWA | **PWA manifest + service worker** on the web app | One codebase; installable on the owner's phone from `ai.ichubz.com` | No native push on iOS below recent versions | Responsive web only |
+| Mobile / PWA | **PWA manifest + service worker** on the web app | One codebase; installable on the owner's phone from `ai.ichubz.com`. Service worker uses versioned caching for **static frontend assets only** and network-only behavior for all control traffic — it must never cache `/api/*`, `/ws`, auth/session responses, approval cards or actions, task state, diffs, or artifact/review-package downloads (SECURITY_AND_THREAT_MODEL.md §14.1) | No native push on iOS below recent versions | Responsive web only |
 
 Explicitly avoided: Kubernetes/Docker orchestration, message brokers, microservices, GraphQL, separate auth SaaS, Electron. None materially helps a one-owner local system.
 
@@ -553,7 +557,7 @@ Layout: **one chat column + one collapsible side panel + a thin top bar.** No da
 
 **Top bar:** project selector (dropdown; remembers last), worker selector with status chips, **Emergency Stop button (always visible, red, requires one confirm tap)**, connection indicator (local / remote via tunnel / bridge offline).
 
-**Main Command Chat contains:** owner commands and free-text requests; concise worker responses (long output collapsed behind "expand"); task-state transitions as compact system lines ("Task 42 → running"); **Approval Cards** — inline, showing the exact bounded action, gate type, diff stats, test verdict, expiry countdown, and `/go` / Reject / Request-revision buttons; **Relay Cards** for manual-relay workers (copy prompt / paste response); `/compare` result cards.
+**Main Command Chat contains:** owner commands and free-text requests; concise worker responses (long output collapsed behind "expand"); task-state transitions as compact system lines ("Task 42 → running"); **Approval Cards** — inline, showing the exact bounded action, gate type, diff stats, test verdict, expiry countdown, and `/go` / Reject / Request-revision buttons; **Relay Cards** for manual-relay workers (copy prompt / paste response, labeled owner-attested); `/compare` result cards. Worker responses and diffs are rendered through a sanitizing Markdown/text pipeline — never as executable HTML (SECURITY_AND_THREAT_MODEL.md §14.1).
 
 **Side panel (collapsible, tabs — hidden by default on phone):**
 
@@ -592,7 +596,7 @@ No DNS, tunnel, certificate, or hosting configuration is performed or implied by
 
 **In:** one owner; one project; one Windows PC bridge; **one CLI connector (Codex CLI, pending U-1 validation) + the manual-relay connector (all workers)**; chat command submission (all twelve commands, with `/compare` limited to two workers); task state machine; response/stdout capture; changed-file + diff capture; single manual approval gate with capability grants; automatic Bridge Log; Bantay Review Package download; emergency stop; local-only access (Phase 1) then Cloudflare-gated remote (Phase 2).
 
-**Out (MVP):** deploy/operate gate execution, database operations, MikroTik/router actions, DNS/tunnel changes by the system, server restarts, credential access, destructive Git operations (force-push, history rewrite — refused), multi-owner roles, notification service, browser-controlled workers, CPU/memory hard quotas, semantic-conflict heuristics, ISP billing / PisoWiFi / payroll / solar / EV / CCTV or any business-system control (extension points reserved via the gate categories and worker registry, nothing more).
+**Out (MVP):** deploy/operate gate execution, database operations, MikroTik/router actions, DNS/tunnel changes by the system, server restarts, credential access, destructive Git operations (force-push, history rewrite — refused), multi-owner roles, notification service, browser-controlled workers, CPU/memory quota tuning (privilege containment itself is a Phase 2 prerequisite, not an MVP feature), semantic-conflict heuristics, ISP billing / PisoWiFi / payroll / solar / EV / CCTV or any business-system control (extension points reserved via the gate categories and worker registry, nothing more).
 
 ## 21. Explicit Non-Goals
 
@@ -614,12 +618,12 @@ These are drafted for the decision log but are **not owner-accepted**. Do not tr
 | P-006 | Topology: local Control Plane + separate outbound-only Local Bridge on the owner's PC; web app served by Control Plane (§5) | `OWNER DECISION REQUIRED` |
 | P-007 | Technology stack per §17 (TypeScript / React / Fastify / SQLite / Zod / WebSocket / pnpm monorepo) | `OWNER DECISION REQUIRED` |
 | P-008 | Remote access via Cloudflare Tunnel + Cloudflare Access on `ai.ichubz.com` only; all other subdomains deferred (§5.1, §19) | `OWNER DECISION REQUIRED` |
-| P-009 | Git worktrees as the task-isolation substrate; non-Git projects require per-project `git init` approval or degraded copy mode (§12) | `OWNER DECISION REQUIRED` |
+| P-009 | Managed-clone enrollment + Git worktrees as the task-isolation substrate; approved results finalize as commits + patches in the managed repository, never by writing to the owner's working copy; applying to the real project is a separate gated action; non-Git projects enroll by snapshot import (§12) | `OWNER DECISION REQUIRED` |
 | P-010 | SQLite is the operational source of truth; Bridge Log Markdown is a regenerable projection (§15) | `OWNER DECISION REQUIRED` |
 | P-011 | Worker registry manifests become the authoritative worker-role definition; prose docs become projections (§8.3) | `OWNER DECISION REQUIRED` |
-| P-012 | Manual relay is a first-class connector and the universal fallback; connector tier is always displayed honestly (§8) | `RECOMMENDED` |
+| P-012 | Manual relay is a first-class connector and the universal fallback — recorded as **owner-attested**, default capability review/design/text-output only, file changes via explicit artifact import; connector tier always displayed honestly (§8) | `RECOMMENDED` |
 | P-013 | First automated connector target: Codex CLI, pending U-1 validation by Antigravity | `PROPOSED` |
-| P-014 | Approval enforcement via short-lived single-use HMAC-signed capability grants verified in both Control Plane and Bridge (see security doc §8) | `RECOMMENDED` |
+| P-014 | Approval enforcement via short-lived single-use capability grants — Phase 1: HMAC-signed (integrity/anti-replay control only, honestly not owner-presence proof since the Control Plane holds the key); before Phase 2 remote access: Bridge-verifiable passkey (WebAuthn) approval proof the Control Plane cannot forge (security doc §8) | `RECOMMENDED` |
 | P-015 | High-risk gate categories (deploy, production, DB, MikroTik, DNS, credentials, restart, destructive Git) are refused entirely in MVP, not merely gated | `RECOMMENDED` |
 | P-016 | MVP concurrency: 1 running task per project, 2 system-wide (§16) | `RECOMMENDED` |
 | P-017 | Task state machine per §10 (12 states) | `PROPOSED` |
