@@ -1,0 +1,6 @@
+packages:
+  - "packages/*"
+# esbuild's postinstall fetches its platform binary; required by vitest.
+# The only approved build script in this workspace.
+allowBuilds:
+  esbuild: true

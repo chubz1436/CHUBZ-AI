@@ -1,0 +1,13 @@
+{
+  "name": "chubz-ai-command-center",
+  "version": "0.1.0",
+  "private": true,
+  "description": "CHUBZ AI Command Center monorepo (M1A: shared contracts only)",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "pnpm -r run test",
+    "typecheck": "pnpm -r run typecheck"
+  }
+}
