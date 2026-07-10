@@ -21,10 +21,14 @@ describe("command vocabulary", () => {
     expect(Object.isFrozen(PRIMARY_COMMANDS)).toBe(true);
   });
 
-  it("parses every command given alone", () => {
+  it("parses every command given alone (except /compare, which requires workers)", () => {
     for (const name of PRIMARY_COMMANDS) {
       const parsed = parseOwnerInput(`/${name}`);
-      expect(parsed).toEqual({ kind: "command", command: name, argumentText: "" });
+      if (name === "compare") {
+        expect(parsed.kind).toBe("invalid");
+      } else {
+        expect(parsed).toEqual({ kind: "command", command: name, argumentText: "" });
+      }
     }
   });
 });
@@ -136,6 +140,37 @@ describe("rejections", () => {
   it("rejects non-string input at the boundary", () => {
     expect(() => parseOwnerInput(undefined as never)).toThrow();
     expect(() => parseOwnerInput(42 as never)).toThrow();
+  });
+});
+
+describe("/compare requires worker-selector text", () => {
+  it("accepts /compare with worker text", () => {
+    expect(parseOwnerInput("/compare codex claude")).toEqual({
+      kind: "command",
+      command: "compare",
+      argumentText: "codex claude",
+    });
+    expect(parseOwnerInput("/COMPARE codex")).toEqual({
+      kind: "command",
+      command: "compare",
+      argumentText: "codex",
+    });
+  });
+
+  it("rejects bare /compare and whitespace-only arguments with a dedicated code", () => {
+    for (const raw of ["/compare", "  /compare  ", "/compare    ", "/compare\t"]) {
+      const parsed = parseOwnerInput(raw);
+      expect(parsed.kind).toBe("invalid");
+      if (parsed.kind === "invalid") expect(parsed.code).toBe("COMPARE_REQUIRES_WORKERS");
+    }
+  });
+
+  it("does not perform worker existence lookup — any selector text parses", () => {
+    expect(parseOwnerInput("/compare not-a-real-worker")).toEqual({
+      kind: "command",
+      command: "compare",
+      argumentText: "not-a-real-worker",
+    });
   });
 });
 

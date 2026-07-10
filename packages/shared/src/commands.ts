@@ -28,6 +28,7 @@ export const PARSE_ERROR_CODES = Object.freeze([
   "EMPTY_COMMAND",
   "UNKNOWN_COMMAND",
   "GO_TAKES_NO_ARGUMENTS",
+  "COMPARE_REQUIRES_WORKERS",
 ] as const);
 
 export type ParseErrorCode = (typeof PARSE_ERROR_CODES)[number];
@@ -117,6 +118,16 @@ export function parseOwnerInput(raw: string): ParsedInput {
     return invalid(
       "GO_TAKES_NO_ARGUMENTS",
       "/go is a bare approval intent for the single displayed pending action; it accepts no arguments and grants no broader authority.",
+    );
+  }
+
+  // The architecture defines "/compare <workers>": a bare /compare has
+  // no meaning. Worker existence is NOT checked here — that is routing,
+  // owned by later milestones; the grammar only demands selector text.
+  if (parsedName.data === "compare" && rest === "") {
+    return invalid(
+      "COMPARE_REQUIRES_WORKERS",
+      "/compare requires worker-selector text (e.g. '/compare codex claude').",
     );
   }
 

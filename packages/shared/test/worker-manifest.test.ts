@@ -55,6 +55,38 @@ const manualWorker = (): Record<string, unknown> => ({
   provenanceMode: "owner-attested",
 });
 
+/** Small test fixture: a plausible local-process worker. */
+const localProcessWorker = (): Record<string, unknown> => ({
+  ...cliWorker(),
+  workerId: "local-daemon",
+  displayName: "Local Daemon Worker",
+  runtime: "local-daemon",
+  connector: {
+    type: "local-process",
+    invocation: { executable: "daemon.exe", args: ["--serve"], promptDelivery: "stdin" },
+    healthCheck: "process-ping",
+    timeoutPolicy: { timeoutSec: 3600, killGraceSec: 15 },
+    cancelable: true,
+  },
+});
+
+/** Small test fixture: a plausible API worker. */
+const apiWorker = (): Record<string, unknown> => ({
+  ...cliWorker(),
+  workerId: "api-reviewer",
+  displayName: "API Reviewer",
+  runtime: "provider-api",
+  connector: {
+    type: "http-api",
+    healthCheck: "http-ping",
+    timeoutPolicy: { timeoutSec: 600, killGraceSec: 0 },
+    cancelable: true,
+  },
+  capabilities: ["review", "text-output"],
+  restrictions: ["never-write"],
+  supportedFileOps: ["read"],
+});
+
 describe("valid manifests", () => {
   it("accepts a valid CLI worker", () => {
     const result = validateWorkerManifest(cliWorker());
@@ -72,6 +104,14 @@ describe("valid manifests", () => {
       expect(result.manifest.provenanceMode).toBe("owner-attested");
       expect(result.manifest.connector.cancelable).toBe(false);
     }
+  });
+
+  it("accepts a valid local-process worker", () => {
+    expect(validateWorkerManifest(localProcessWorker()).valid).toBe(true);
+  });
+
+  it("accepts a valid API worker", () => {
+    expect(validateWorkerManifest(apiWorker()).valid).toBe(true);
   });
 
   it("supports all five planned connector categories in the enum", () => {
@@ -217,6 +257,89 @@ describe("contradictory declarations", () => {
     const candidate = manualWorker();
     candidate.supportedFileOps = ["none", "read"];
     expect(validateWorkerManifest(candidate).valid).toBe(false);
+  });
+});
+
+describe("cross-field hardening (correction 7)", () => {
+  it("rejects an API worker claiming owner-attested manual provenance", () => {
+    const candidate = apiWorker();
+    candidate.provenanceMode = "owner-attested";
+    const result = validateWorkerManifest(candidate);
+    expect(result.valid).toBe(false);
+    if (!result.valid) {
+      expect(result.issues.some((i) => i.path === "provenanceMode")).toBe(true);
+    }
+  });
+
+  it("rejects manual-import-only combined with automated workspace writing", () => {
+    const candidate = cliWorker();
+    candidate.restrictions = ["manual-import-only"];
+    const result = validateWorkerManifest(candidate);
+    expect(result.valid).toBe(false);
+    if (!result.valid) {
+      expect(result.issues.some((i) => i.path === "restrictions")).toBe(true);
+    }
+  });
+
+  it("still accepts manual-import-only on a manual-relay worker", () => {
+    expect(validateWorkerManifest(manualWorker()).valid).toBe(true);
+  });
+});
+
+describe("deep immutability (correction 6)", () => {
+  it("every nested object and array of a parsed manifest is frozen", () => {
+    const parsed = WorkerManifestSchema.parse(cliWorker());
+    expect(Object.isFrozen(parsed)).toBe(true);
+    expect(Object.isFrozen(parsed.capabilities)).toBe(true);
+    expect(Object.isFrozen(parsed.restrictions)).toBe(true);
+    expect(Object.isFrozen(parsed.allowedTaskCategories)).toBe(true);
+    expect(Object.isFrozen(parsed.supportedFileOps)).toBe(true);
+    expect(Object.isFrozen(parsed.requiredApprovals)).toBe(true);
+    expect(Object.isFrozen(parsed.contextLimits)).toBe(true);
+    expect(Object.isFrozen(parsed.connector)).toBe(true);
+    expect(Object.isFrozen(parsed.connector.timeoutPolicy)).toBe(true);
+    expect(Object.isFrozen(parsed.connector.invocation)).toBe(true);
+    expect(Object.isFrozen(parsed.connector.invocation?.args)).toBe(true);
+  });
+
+  it("mutation attempts on nested structures throw", () => {
+    const parsed = WorkerManifestSchema.parse(cliWorker());
+    expect(() => {
+      (parsed.capabilities as unknown as string[]).push("design");
+    }).toThrow(TypeError);
+    expect(() => {
+      (parsed.connector.invocation?.args as unknown as string[]).push("--unsafe");
+    }).toThrow(TypeError);
+    expect(() => {
+      (parsed.connector.timeoutPolicy as { timeoutSec: number }).timeoutSec = 999_999;
+    }).toThrow(TypeError);
+    expect(() => {
+      (parsed.contextLimits as { maxBytes: number }).maxBytes = 0;
+    }).toThrow(TypeError);
+  });
+
+  it("the caller's original input object is neither frozen nor mutated", () => {
+    const input = cliWorker();
+    const inputSnapshot = JSON.parse(JSON.stringify(input)) as unknown;
+    const parsed = WorkerManifestSchema.parse(input);
+    expect(Object.isFrozen(input)).toBe(false);
+    expect(Object.isFrozen(input.connector)).toBe(false);
+    expect(
+      Object.isFrozen((input.connector as { invocation: { args: string[] } }).invocation.args),
+    ).toBe(false);
+    expect(input).toEqual(inputSnapshot);
+    // And the input stays independently mutable after parsing.
+    input.displayName = "still mutable";
+    expect(parsed.displayName).toBe("Codex");
+  });
+
+  it("validateWorkerManifest results are deeply frozen too", () => {
+    const result = validateWorkerManifest(manualWorker());
+    expect(result.valid).toBe(true);
+    if (result.valid) {
+      expect(Object.isFrozen(result.manifest.capabilities)).toBe(true);
+      expect(Object.isFrozen(result.manifest.connector)).toBe(true);
+    }
   });
 });
 

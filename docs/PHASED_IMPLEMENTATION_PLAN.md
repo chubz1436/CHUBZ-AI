@@ -12,7 +12,7 @@ Worker roles throughout (per D-005, as amended by **D-019**): **BUNSO using Fabl
 
 ## Phase 0 — Design Acceptance and Local Prerequisites
 
-> **PHASE 0 STATUS: NOT COMPLETE.** Phase 0A is completed; **Phase 0B has not been executed.** Phase 0 as a whole is complete only after Phase 0B passes *and* Kenneth / CHUBZ reviews the validation report.
+> **PHASE 0 STATUS: COMPLETE (conditional pass).** Phase 0A is completed. Phase 0B was executed by Antigravity with a **CONDITIONAL PASS** ([PHASE0B_OPERATIONAL_VALIDATION_REPORT.md](PHASE0B_OPERATIONAL_VALIDATION_REPORT.md)); the owner reviewed it and issued the M1A GO. **Current: M1A completed on `task/m1a-core-contracts` (not merged); Bantay/Codex review is current; merge approval pending; M1B pending and not authorized.**
 
 **Objective:** convert this design package into owner-accepted decisions and verify the PC is actually ready — without writing application code.
 
@@ -27,7 +27,7 @@ Completed 2026-07-10:
 - Documentation alignment across the plan, design, security, active-task, and worker-role documents.
 - Version control for this planning repository exists on branch `main` with remote `github.com/chubz1436/CHUBZ-AI`.
 
-### Phase 0B — Operational feasibility validation — `CURRENT — NOT YET EXECUTED`
+### Phase 0B — Operational feasibility validation — `COMPLETED — CONDITIONAL PASS (2026-07-10)`
 
 Assigned to **Antigravity**. Read-only and trivially reversible checks only; nothing here has been performed yet.
 
@@ -44,7 +44,7 @@ Assigned to **Antigravity**. Read-only and trivially reversible checks only; not
 
 **Expected files/packages:** an Antigravity validation report, plus updates to `docs/ACTIVE_TASKS.md` and worker profile invocation notes. No code.
 
-**Assigned workers:** BUNSO (design + decision recording — done, Phase 0A), Bantay (review — done, Phase 0A), Owner (decisions — done, Phase 0A; review of the Phase 0B report — pending), **Antigravity (Phase 0B validation — current, not yet executed)**.
+**Assigned workers:** BUNSO (design + decision recording — done, Phase 0A), Bantay (review — done, Phase 0A), Owner (decisions and Phase 0B report review — done), Antigravity (Phase 0B validation — done, conditional pass).
 
 **Acceptance criteria (Phase 0 as a whole):** Phase 0A decisions resolved (**done**) **and** Phase 0B executed with U-1/U-2 answered — even if the answer is "not workable — start manual-relay-only" — environment and process-management assumptions verified, pilot project and vault path named, **and the owner has reviewed the Phase 0B validation report.**
 
@@ -203,8 +203,8 @@ Why M1A first: it is the smallest fully bounded start, zero-risk (no I/O), force
 | Phase | Gate to enter | Gate to exit |
 |---|---|---|
 | 0A | Owner GO on this package post-Bantay review — **granted** | Decisions resolved — **completed** |
-| 0B | Phase 0A complete — **entered** | Antigravity validation executed and U-1/U-2 answered, then owner reviews the report — **current, not yet executed** |
-| 1 | Phase 0B passed, owner reviewed the validation report, and owner recorded an explicit GO for Phase 1 — **pending** | Live demo + acceptance list + security reviews |
+| 0B | Phase 0A complete — **entered** | Antigravity validation executed and U-1/U-2 answered, then owner reviews the report — **completed, conditional pass** |
+| 1 | Phase 0B passed, owner reviewed the validation report, and owner recorded an explicit GO — **granted for M1A only; M1A completed on its task branch, review current, merge pending; M1B+ still needs its own GO** | Live demo + acceptance list + security reviews |
 | 2 | Owner GO | §18 checklist evidenced; explicit remote-enable decision |
 | 3 | Owner GO | Adapter contract suite green per adapter |
 | 4 | Owner GO | Concurrency + hardening acceptance tests |

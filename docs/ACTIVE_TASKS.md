@@ -1,40 +1,27 @@
 # Active Tasks
 
-> **STATUS: DESIGN ACCEPTED — PHASE 0B OPERATIONAL VALIDATION IS CURRENT AND NOT YET EXECUTED. NO IMPLEMENTATION AUTHORIZED.**
->
-> **Phase 0 is NOT complete.** Phase 0A (documentation and decision prerequisites) is completed. Phase 0B (operational feasibility validation) has not been executed. Phase 0 is complete only after Phase 0B passes and Kenneth / CHUBZ reviews the validation report.
-
-No implementation task is active. No application code exists. No Phase 0B validation has been performed.
+> **STATUS: M1A COMPLETED ON TASK BRANCH `task/m1a-core-contracts` — BANTAY/CODEX REVIEW CURRENT. MERGE NOT APPROVED. M1B NOT AUTHORIZED.**
 
 ## Project lifecycle status
 
-1. **Completed** — Architecture design (BUNSO using Fable 5).
-2. **Completed** — Bantay architecture review (required revisions R1–R7, all applied).
-3. **Completed** — Owner architecture decisions (D-001 … D-019 accepted 2026-07-10).
-4. **Completed** — Phase 0A documentation and decision prerequisites.
-5. **Current / Not yet executed** — **Antigravity Phase 0B operational feasibility validation.**
-6. **Pending** — Owner review of the Phase 0B validation report.
-7. **Pending** — Owner GO for Phase 1.
-8. **Pending and not authorized** — **BUNSO/Fable 5 M1A Core Contracts**, followed by M1B … M1E one at a time, each after owner approval of the previous review.
+1. **Completed** — Architecture design (BUNSO using Fable 5), Bantay review (revisions R1–R7 applied), and owner architecture decisions (D-001 … D-021).
+2. **Completed** — Phase 0A documentation and decision prerequisites.
+3. **Completed — conditional pass** — Antigravity Phase 0B operational feasibility validation ([PHASE0B_OPERATIONAL_VALIDATION_REPORT.md](PHASE0B_OPERATIONAL_VALIDATION_REPORT.md)).
+4. **Completed on task branch** — BUNSO/Fable 5 M1A Core Contracts implementation (`task/m1a-core-contracts`; **not merged to `main`**).
+5. **Current** — M1A Bantay/Codex review, including the owner-directed final blocked-context and manifest hardening correction (D-021).
+6. **Pending** — Owner merge approval for M1A.
+7. **Pending and not authorized** — M1B Protocol Contracts (requires its own explicit owner GO), then M1C … M1E one at a time, each after owner approval of the previous review.
 
 Earlier project bootstrap and worker onboarding (Codex, BUNSO, Antigravity) are complete and precede item 1.
 
-## Current task detail — Antigravity Phase 0B operational feasibility validation
+## Current task detail — M1A review
 
-**Not yet executed.** Read-only and trivially reversible checks only, per [PHASED_IMPLEMENTATION_PLAN.md](PHASED_IMPLEMENTATION_PLAN.md) Phase 0B:
+Under review on branch `task/m1a-core-contracts`: `packages/shared` core contracts (task states, trusted blocked context, legal transitions with evidence corroboration and stage-aware reconciliation, twelve-command grammar, worker-manifest schema) plus exhaustive unit tests.
 
-- Assess the Windows environment on the owner's actual PC.
-- Confirm Node.js LTS, pnpm, and Git availability or installability.
-- Verify filesystem permissions for the intended data, managed-clone, and worktree directories.
-- **Validate U-1** — the Codex CLI non-interactive invocation — with a harmless run in a scratch directory.
-- **Validate U-2** — the Claude Code CLI headless invocation — likewise.
-- Verify process-management assumptions: spawn, timeout, and reliable process-tree termination.
-- Assess connector feasibility per worker and report the exact working command lines for the worker manifests' draft `invocation` fields.
-- Report any Windows-specific friction affecting process supervision or Git worktrees.
+- Reviewers: Bantay (scope, architecture compliance, safety) and Codex (independent code review, per D-019 — BUNSO cannot review its own implementation).
+- Outcome required: review findings resolved, then an explicit owner merge GO before `task/m1a-core-contracts` may merge into `main`.
 
-Antigravity produces a validation report; the owner reviews it before any Phase 1 GO.
-
-Owner still to provide: the Obsidian vault path (U-7), the pilot project choice, and confirmation that the pilot project is or may become a Git repository. Cloudflare account status (U-6) is needed only before Phase 2.
+Owner still to provide (needed before Phase 1 runtime work, not blocking M1A review): the Obsidian vault path (U-7) and the pilot project choice. Cloudflare account status (U-6) is needed only before Phase 2.
 
 ## Implementation-worker assignment (per D-019)
 
@@ -45,8 +32,8 @@ Owner still to provide: the Obsidian vault path (U-7), the pilot project choice,
 
 ## Authorization boundary
 
-Item #5 authorizes Antigravity's read-only Phase 0B validation only — and that validation has not yet been executed.
+M1A work exists only on the task branch; **merging it into `main` requires an explicit owner GO** that has not been given.
 
-Item #8 (M1A Core Contracts) is **pending and not authorized.** It requires Phase 0B to pass, owner review of the validation report, and a separate explicit owner GO for Phase 1 before any coding begins.
+**M1B is pending and not authorized.** It requires M1A review completion, owner merge approval, and its own explicit owner GO before any M1B coding begins.
 
-Nothing in this file authorizes application coding, framework initialization, dependency installation, AI worker connection, domain or tunnel configuration, server access, MikroTik access, deployment, restart, infrastructure changes, or production actions.
+Nothing in this file authorizes runtime orchestration, worker connection, domain or tunnel configuration, server access, MikroTik access, deployment, restart, infrastructure changes, or production actions.

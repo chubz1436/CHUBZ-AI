@@ -1,6 +1,6 @@
 # Decisions
 
-> **STATUS: DECISIONS D-001 … D-020 ACCEPTED BY OWNER — M1A IMPLEMENTATION IN REVIEW**
+> **STATUS: DECISIONS D-001 … D-021 ACCEPTED BY OWNER — M1A COMPLETED ON TASK BRANCH, IN REVIEW; MERGE PENDING**
 
 This file is the decision log. An entry marked **ACCEPTED BY OWNER** records a decision Kenneth / CHUBZ has approved. Acceptance of a design decision does **not** by itself authorize implementation, deployment, infrastructure configuration, or production access; each implementation phase carries its own explicit owner GO.
 
@@ -136,3 +136,19 @@ Decisions D-006 … D-018 correspond to proposals P-006 … P-018 in [FINAL_ARCH
 - **Clarification 2 — cancellation semantics:** States where worker dispatch or integration may be in flight — `AWAITING_DISPATCH`, `RUNNING`, `APPROVED` — cancel through `CANCELLING → CANCELLED`, completed only on the Bridge's kill/termination confirmation. Passive states with no process requiring termination — `DRAFT`, `CONTEXT_PREPARING`, `RESULT_CAPTURED`, `AWAITING_APPROVAL`, `REVISION_REQUESTED`, and ordinary `BLOCKED` — may be cancelled directly to `CANCELLED` by the owner only. Terminal states remain terminal.
 - **Clarification 3 — execution-unknown:** `BLOCKED(execution-unknown)` is excluded from ordinary unblocking and from ordinary cancellation until reconciliation is recorded. Its only exits are the owner-reviewed reconciliation outcomes `confirmed-completed` (→ COMPLETED), `confirmed-failed` (→ FAILED), and `confirmed-not-executed` (→ CONTEXT_PREPARING with a new immutable attempt), each requiring recorded owner-reconciliation evidence. No automated actor may resolve execution-unknown.
 - **Boundary:** This decision clarifies the M1A contract only; it does not authorize additional implementation scope.
+
+## D-021 — Trusted blocked context and stage-aware recovery
+
+- **Status:** ACCEPTED BY OWNER
+- **Decision date:** 2026-07-10
+- **Requirements:**
+  1. `BLOCKED` must preserve trusted information about the state and operation that entered it (source state, blocked operation, reason, attempt identity, operation identity, and journal reference where applicable).
+  2. A caller must not be able to substitute or omit the stored blocked reason, source state, operation, attempt identity, or journal identity.
+  3. Recovery from `BLOCKED` must return only to a target valid for the original blocked stage.
+  4. `execution-unknown` may be used only when an operation was recorded as started but its final result is uncertain (a trusted journal/start reference is mandatory).
+  5. A reconciliation outcome means the outcome of the **original operation** — not automatically the outcome of the entire task.
+  6. `confirmed-completed` must advance only to the legitimate success state of the original operation (dispatch → RUNNING; execution → RESULT_CAPTURED; integration → COMPLETED).
+  7. A retry must use a new immutable attempt or operation identity where required; a Boolean assertion alone is insufficient.
+  8. Ordinary BLOCKED recovery and execution-unknown reconciliation are separate paths.
+  9. This clarification changes only the M1A contract and does not authorize runtime orchestration.
+- **Note:** D-020's historical text is not rewritten; this decision refines its reconciliation model to be stage-aware.

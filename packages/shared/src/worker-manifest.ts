@@ -6,8 +6,25 @@ import { z } from "zod";
  *
  * Manifests declare identity, capabilities, and limits — NEVER secrets.
  * Every object is strict: unknown fields (including credential-like
- * fields such as apiKey/token/password) are rejected outright.
+ * fields such as apiKey/token/password) are rejected outright. Parsed
+ * manifests are deeply frozen: no nested object or array can be mutated
+ * after validation. The caller's original input is never mutated or
+ * frozen (Zod parsing constructs fresh output objects).
  */
+
+/**
+ * Small deterministic recursive freezer. Zod's parse output is a fresh
+ * structure, so freezing it cannot affect the caller's input object.
+ */
+export function deepFreeze<T>(value: T): T {
+  if (value === null || typeof value !== "object" || Object.isFrozen(value)) {
+    return value;
+  }
+  for (const key of Reflect.ownKeys(value)) {
+    deepFreeze((value as Record<PropertyKey, unknown>)[key]);
+  }
+  return Object.freeze(value);
+}
 
 export const CONNECTOR_TYPES = Object.freeze([
   "cli-headless",
@@ -186,6 +203,28 @@ export const WorkerManifestSchema = z
       }
     }
 
+    if (connector.type === "http-api" && provenanceMode !== "automated") {
+      ctx.addIssue({
+        code: "custom",
+        path: ["provenanceMode"],
+        message:
+          "an http-api connector is automated by nature and cannot claim owner-attested manual provenance",
+      });
+    }
+
+    if (
+      restrictions.includes("manual-import-only") &&
+      connector.type !== "manual-relay" &&
+      supportedFileOps.includes("write-workspace")
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["restrictions"],
+        message:
+          "manual-import-only cannot be combined with automated workspace writing; files must enter via explicit artifact import",
+      });
+    }
+
     if (restrictions.includes("never-write")) {
       if (capabilities.includes("code-write")) {
         ctx.addIssue({
@@ -203,7 +242,7 @@ export const WorkerManifestSchema = z
       }
     }
   })
-  .readonly();
+  .transform((manifest) => deepFreeze(manifest));
 
 export type WorkerManifest = z.infer<typeof WorkerManifestSchema>;
 
