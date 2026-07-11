@@ -156,3 +156,43 @@ export const mutatingEnvelope = <K extends string, P extends z.ZodType>(
     idempotencyKey: IdempotencyKeySchema,
     payload,
   });
+
+/** The identity fields an envelope and a payload may both carry. */
+export interface EnvelopeIdentityCarrier {
+  readonly taskId?: string | undefined;
+  readonly attemptId?: string | undefined;
+  readonly projectId?: string | undefined;
+  readonly payload: unknown;
+}
+
+const SHARED_IDENTITY_FIELDS = ["taskId", "attemptId", "projectId"] as const;
+
+/**
+ * Where an envelope and its payload both carry the same identity field
+ * (taskId, attemptId, projectId), they must match exactly —
+ * contradictory identifiers are rejected (M1B R1). Applied at the
+ * direction-union level so every message kind is covered.
+ */
+export const requireConsistentIdentity = <S extends z.ZodType<EnvelopeIdentityCarrier>>(
+  schema: S,
+) =>
+  schema.superRefine((message, ctx) => {
+    const payload = message.payload;
+    if (typeof payload !== "object" || payload === null) return;
+    const payloadRecord = payload as Record<string, unknown>;
+    for (const field of SHARED_IDENTITY_FIELDS) {
+      const envelopeValue = message[field];
+      const payloadValue = payloadRecord[field];
+      if (
+        typeof envelopeValue === "string" &&
+        typeof payloadValue === "string" &&
+        envelopeValue !== payloadValue
+      ) {
+        ctx.addIssue({
+          code: "custom",
+          path: [field],
+          message: `envelope ${field} '${envelopeValue}' contradicts payload ${field} '${payloadValue}'`,
+        });
+      }
+    }
+  });

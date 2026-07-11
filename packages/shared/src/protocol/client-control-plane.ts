@@ -10,6 +10,7 @@ import {
   displayText,
   mutatingEnvelope,
   readonlyEnvelope,
+  requireConsistentIdentity,
 } from "./common.js";
 import { ProtocolErrorSchema, parseEnvelopeWith, type EnvelopeParseResult } from "./errors.js";
 import { EventSequenceSchema, StreamCursorSchema } from "./event-cursor.js";
@@ -71,10 +72,16 @@ export const ApprovalDecidePayloadSchema = z.strictObject({
   note: boundedText(PROTOCOL_LIMITS.maxStatusTextLength).optional(),
 });
 
-/** Cancellation request — implies nothing about termination success. */
+/**
+ * ATTEMPT-BOUND cancellation (R1): both the task and the exact attempt
+ * are required, so a stale or ambiguous cancel can never target a newer
+ * attempt. Task-wide cancellation, if ever needed, will be a separate
+ * explicit contract with revision/concurrency protection. Implies
+ * nothing about termination success.
+ */
 export const TaskCancelPayloadSchema = z.strictObject({
   taskId: SafeIdSchema,
-  attemptId: SafeIdSchema.optional(),
+  attemptId: SafeIdSchema,
   reasonNote: boundedText(PROTOCOL_LIMITS.maxStatusTextLength).optional(),
 });
 
@@ -126,14 +133,16 @@ export const READONLY_CLIENT_KINDS = Object.freeze([
   "stream.resume",
 ] as const);
 
-export const ClientToControlPlaneMessageSchema = z.discriminatedUnion("messageKind", [
-  ChatSubmitMessageSchema,
-  ApprovalDecideMessageSchema,
-  TaskCancelMessageSchema,
-  TaskGetMessageSchema,
-  TaskListMessageSchema,
-  StreamResumeMessageSchema,
-]);
+export const ClientToControlPlaneMessageSchema = requireConsistentIdentity(
+  z.discriminatedUnion("messageKind", [
+    ChatSubmitMessageSchema,
+    ApprovalDecideMessageSchema,
+    TaskCancelMessageSchema,
+    TaskGetMessageSchema,
+    TaskListMessageSchema,
+    StreamResumeMessageSchema,
+  ]),
+);
 export type ClientToControlPlaneMessage = z.infer<typeof ClientToControlPlaneMessageSchema>;
 
 export function parseClientToControlPlaneMessage(
@@ -158,17 +167,38 @@ export const RequestRejectedPayloadSchema = z.strictObject({
   error: ProtocolErrorSchema,
 });
 
-/** Task snapshots use the M1A task-state type — never a parallel enum. */
-export const TaskSnapshotPayloadSchema = z.strictObject({
-  taskId: SafeIdSchema,
-  projectId: SlugIdSchema,
-  workerId: SlugIdSchema.optional(),
-  state: TaskStateSchema,
-  blockedReason: BlockedReasonSchema.optional(),
-  attemptId: SafeIdSchema.optional(),
-  updatedAt: IsoUtcTimestampSchema,
-  summary: displayText(PROTOCOL_LIMITS.maxStatusTextLength).optional(),
-});
+/**
+ * Task snapshots use the M1A task-state type — never a parallel enum.
+ * State-discriminated (R1): BLOCKED requires a valid blockedReason;
+ * every other state rejects one.
+ */
+export const TaskSnapshotPayloadSchema = z
+  .strictObject({
+    taskId: SafeIdSchema,
+    projectId: SlugIdSchema,
+    workerId: SlugIdSchema.optional(),
+    state: TaskStateSchema,
+    blockedReason: BlockedReasonSchema.optional(),
+    attemptId: SafeIdSchema.optional(),
+    updatedAt: IsoUtcTimestampSchema,
+    summary: displayText(PROTOCOL_LIMITS.maxStatusTextLength).optional(),
+  })
+  .superRefine((snapshot, ctx) => {
+    if (snapshot.state === "BLOCKED" && snapshot.blockedReason === undefined) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["blockedReason"],
+        message: "a BLOCKED snapshot requires its blockedReason",
+      });
+    }
+    if (snapshot.state !== "BLOCKED" && snapshot.blockedReason !== undefined) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["blockedReason"],
+        message: `only BLOCKED snapshots carry a blockedReason (state is ${snapshot.state})`,
+      });
+    }
+  });
 
 export const TaskEventPayloadSchema = z.strictObject({
   streamId: SafeIdSchema,
@@ -257,15 +287,17 @@ export const CONTROL_PLANE_TO_CLIENT_KINDS = Object.freeze([
   "protocol.error",
 ] as const);
 
-export const ControlPlaneToClientMessageSchema = z.discriminatedUnion("messageKind", [
-  RequestAcceptedMessageSchema,
-  RequestRejectedMessageSchema,
-  TaskSnapshotMessageSchema,
-  TaskEventMessageSchema,
-  ApprovalRequestedMessageSchema,
-  WorkerStatusMessageSchema,
-  ProtocolErrorMessageSchema,
-]);
+export const ControlPlaneToClientMessageSchema = requireConsistentIdentity(
+  z.discriminatedUnion("messageKind", [
+    RequestAcceptedMessageSchema,
+    RequestRejectedMessageSchema,
+    TaskSnapshotMessageSchema,
+    TaskEventMessageSchema,
+    ApprovalRequestedMessageSchema,
+    WorkerStatusMessageSchema,
+    ProtocolErrorMessageSchema,
+  ]),
+);
 export type ControlPlaneToClientMessage = z.infer<typeof ControlPlaneToClientMessageSchema>;
 
 export function parseControlPlaneToClientMessage(

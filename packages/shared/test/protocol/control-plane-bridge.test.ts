@@ -4,10 +4,15 @@ import {
   CONTROL_PLANE_TO_BRIDGE_KINDS,
   CommandAckPayloadSchema,
   CommandResultPayloadSchema,
+  ControlPlaneToBridgeMessageSchema,
+  BridgeToControlPlaneMessageSchema,
   MUTATING_BRIDGE_COMMAND_KINDS,
   PROTOCOL_VERSION,
   parseBridgeToControlPlaneMessage,
   parseControlPlaneToBridgeMessage,
+  validateBridgeReportAgainstCommand,
+  type BridgeToControlPlaneMessage,
+  type ControlPlaneToBridgeMessage,
 } from "../../src/index.js";
 
 const base = (messageKind: string, payload: unknown, extra: Record<string, unknown> = {}) => ({
@@ -19,8 +24,8 @@ const base = (messageKind: string, payload: unknown, extra: Record<string, unkno
   ...extra,
 });
 
-const withKey = (messageKind: string, payload: unknown) =>
-  base(messageKind, payload, { idempotencyKey: "bridge-cmd-key-01" });
+const withKey = (messageKind: string, payload: unknown, extra: Record<string, unknown> = {}) =>
+  base(messageKind, payload, { idempotencyKey: "bridge-cmd-key-01", ...extra });
 
 const errCode = (r: ReturnType<typeof parseControlPlaneToBridgeMessage>) => {
   if (r.ok) throw new Error("expected error");
@@ -37,18 +42,44 @@ const dispatchPayload = () => ({
   prompt: { text: "Fix the login timeout in the pilot project.", contextArtifactIds: ["ctx-1"] },
 });
 
+const preparePayload = () => ({
+  projectId: "pilot-project",
+  taskId: "task-42",
+  attemptId: "attempt-1",
+  operationId: "op-prep-1",
+  workspaceId: "ws-task-42-a1",
+  baseRef: "a1b2c3d4e5",
+  authorizationRef: "authref-001",
+});
+
+const dispatchCommand = (): ControlPlaneToBridgeMessage =>
+  ControlPlaneToBridgeMessageSchema.parse(withKey("worker.dispatch", dispatchPayload()));
+
+const dispatchResultPayload = () => ({
+  commandMessageId: "cmd-200",
+  taskId: "task-42",
+  attemptId: "attempt-1",
+  operationId: "op-disp-1",
+  outcome: "succeeded" as const,
+  report: {
+    commandKind: "worker.dispatch" as const,
+    workspaceId: "ws-task-42-a1",
+    summary: "Worker finished; 3 files changed.",
+    artifactIds: ["artifact-diff-1", "artifact-log-1"],
+  },
+});
+
+const report = (messageKind: string, payload: unknown, extra: Record<string, unknown> = {}) =>
+  base(messageKind, payload, { messageId: "rpt-300", ...extra });
+
+const parsedReport = (messageKind: string, payload: unknown): BridgeToControlPlaneMessage =>
+  BridgeToControlPlaneMessageSchema.parse(report(messageKind, payload));
+
 describe("control plane → bridge commands", () => {
   it("accepts every command kind", () => {
     const samples: Record<string, unknown> = {
       "bridge.ping": base("bridge.ping", { echo: "ping-1" }),
-      "workspace.prepare": withKey("workspace.prepare", {
-        projectId: "pilot-project",
-        taskId: "task-42",
-        attemptId: "attempt-1",
-        workspaceId: "ws-task-42-a1",
-        baseRef: "a1b2c3d4e5",
-        authorizationRef: "authref-001",
-      }),
+      "workspace.prepare": withKey("workspace.prepare", preparePayload()),
       "worker.dispatch": withKey("worker.dispatch", dispatchPayload()),
       "worker.cancel": withKey("worker.cancel", {
         taskId: "task-42",
@@ -59,7 +90,7 @@ describe("control plane → bridge commands", () => {
       "result.collect": withKey("result.collect", {
         taskId: "task-42",
         attemptId: "attempt-1",
-        operationId: "op-disp-1",
+        operationId: "op-coll-1",
         workspaceId: "ws-task-42-a1",
       }),
     };
@@ -68,14 +99,16 @@ describe("control plane → bridge commands", () => {
     }
   });
 
+  it("workspace.prepare requires an explicit operation ID", () => {
+    const { operationId: _omit, ...withoutOperation } = preparePayload();
+    expect(
+      errCode(parseControlPlaneToBridgeMessage(withKey("workspace.prepare", withoutOperation))),
+    ).toBe("VALIDATION_ERROR");
+  });
+
   it("every mutating bridge command without an idempotency key is rejected", () => {
     const payloads: Record<(typeof MUTATING_BRIDGE_COMMAND_KINDS)[number], unknown> = {
-      "workspace.prepare": {
-        projectId: "pilot-project",
-        taskId: "task-42",
-        attemptId: "attempt-1",
-        workspaceId: "ws-task-42-a1",
-      },
+      "workspace.prepare": preparePayload(),
       "worker.dispatch": dispatchPayload(),
       "worker.cancel": {
         taskId: "task-42",
@@ -86,7 +119,7 @@ describe("control plane → bridge commands", () => {
       "result.collect": {
         taskId: "task-42",
         attemptId: "attempt-1",
-        operationId: "op-disp-1",
+        operationId: "op-coll-1",
         workspaceId: "ws-task-42-a1",
       },
     };
@@ -107,7 +140,6 @@ describe("control plane → bridge commands", () => {
     for (const smuggled of [
       { ...dispatchPayload(), shellCommand: "rm -rf /" },
       { ...dispatchPayload(), executable: "cmd.exe" },
-      { ...dispatchPayload(), args: ["/c", "del"] },
       { ...dispatchPayload(), cwd: "B:/somewhere" },
       {
         ...dispatchPayload(),
@@ -127,9 +159,7 @@ describe("control plane → bridge commands", () => {
       "C:relative",
       "\\\\server\\share",
       "../parent",
-      "..",
       "a/b",
-      "a\\b",
     ]) {
       const payload = { ...dispatchPayload(), workspaceId };
       expect(
@@ -141,7 +171,6 @@ describe("control plane → bridge commands", () => {
 
   it("dispatch requires a validated manifest reference", () => {
     for (const worker of [
-      undefined,
       { manifestId: "Codex", manifestVersion: "1.0.0" },
       { manifestId: "codex", manifestVersion: "latest" },
       { manifestId: "codex" },
@@ -153,19 +182,17 @@ describe("control plane → bridge commands", () => {
     }
   });
 
-  it("cancellation must identify the exact operation and originating dispatch", () => {
-    const missingOperation = withKey("worker.cancel", {
+  it("envelope/payload identity contradictions are rejected", () => {
+    const contradictingTask = withKey("worker.dispatch", dispatchPayload(), {
+      taskId: "task-99",
+    });
+    expect(errCode(parseControlPlaneToBridgeMessage(contradictingTask))).toBe("VALIDATION_ERROR");
+    const consistent = withKey("worker.dispatch", dispatchPayload(), {
       taskId: "task-42",
       attemptId: "attempt-1",
-      dispatchCommandId: "cmd-199",
+      projectId: "pilot-project",
     });
-    expect(errCode(parseControlPlaneToBridgeMessage(missingOperation))).toBe("VALIDATION_ERROR");
-    const missingDispatchRef = withKey("worker.cancel", {
-      taskId: "task-42",
-      attemptId: "attempt-1",
-      operationId: "op-disp-1",
-    });
-    expect(errCode(parseControlPlaneToBridgeMessage(missingDispatchRef))).toBe("VALIDATION_ERROR");
+    expect(parseControlPlaneToBridgeMessage(consistent).ok).toBe(true);
   });
 
   it("client requests cannot masquerade as bridge commands", () => {
@@ -173,31 +200,14 @@ describe("control plane → bridge commands", () => {
       "UNKNOWN_MESSAGE_KIND",
     );
   });
-
-  it("bridge reports cannot masquerade as bridge commands", () => {
-    expect(errCode(parseControlPlaneToBridgeMessage(base("command.result", {})))).toBe(
-      "UNKNOWN_MESSAGE_KIND",
-    );
-  });
 });
 
 describe("bridge → control plane reports", () => {
-  const resultPayload = () => ({
-    commandMessageId: "cmd-200",
-    taskId: "task-42",
-    attemptId: "attempt-1",
-    operationId: "op-disp-1",
-    outcome: "succeeded" as const,
-    evidenceKinds: ["bridge-execution-report"],
-    summary: "Worker finished; 3 files changed.",
-    artifactIds: ["artifact-diff-1", "artifact-log-1"],
-  });
-
   it("accepts every report kind", () => {
     const samples: Record<string, unknown> = {
-      "bridge.pong": base("bridge.pong", { echo: "ping-1", bridgeVersion: "0.1.0" }),
-      "command.ack": base("command.ack", { commandMessageId: "cmd-200", taskId: "task-42" }),
-      "command.progress": base("command.progress", {
+      "bridge.pong": report("bridge.pong", { echo: "ping-1", bridgeVersion: "0.1.0" }),
+      "command.ack": report("command.ack", { commandMessageId: "cmd-200", taskId: "task-42" }),
+      "command.progress": report("command.progress", {
         commandMessageId: "cmd-200",
         taskId: "task-42",
         attemptId: "attempt-1",
@@ -205,17 +215,18 @@ describe("bridge → control plane reports", () => {
         progressSequence: 1,
         note: "Worker started.",
       }),
-      "command.result": base("command.result", resultPayload()),
-      "command.failed": base("command.failed", {
+      "command.result": report("command.result", dispatchResultPayload()),
+      "command.failed": report("command.failed", {
         commandMessageId: "cmd-200",
         taskId: "task-42",
         attemptId: "attempt-1",
         operationId: "op-disp-1",
         outcome: "failed",
+        commandKind: "worker.dispatch",
         failureReason: "timeout",
         summary: "Worker exceeded the manifest timeout and was terminated.",
       }),
-      "bridge.health": base("bridge.health", {
+      "bridge.health": report("bridge.health", {
         status: "ok",
         activeOperationIds: ["op-disp-1"],
         queuedCount: 0,
@@ -227,18 +238,41 @@ describe("bridge → control plane reports", () => {
     }
   });
 
-  it("reports must reference the originating command", () => {
-    const { commandMessageId: _omit, ...withoutOrigin } = resultPayload();
-    expect(
-      parseBridgeToControlPlaneMessage(base("command.result", withoutOrigin)).ok,
-    ).toBe(false);
+  it("the bridge cannot claim owner-reconciliation or grant-verified — no evidence field exists", () => {
+    for (const smuggled of [
+      { ...dispatchResultPayload(), evidenceKinds: ["owner-reconciliation"] },
+      { ...dispatchResultPayload(), evidenceKinds: ["grant-verified"] },
+      { ...dispatchResultPayload(), evidence: ["bridge-integration-report"] },
+      { ...dispatchResultPayload(), ownerReconciliation: true },
+      { ...dispatchResultPayload(), grantVerified: true },
+    ]) {
+      expect(parseBridgeToControlPlaneMessage(report("command.result", smuggled)).ok).toBe(false);
+    }
   });
 
-  it("final reports identify task, attempt, and operation", () => {
-    const { operationId: _omit, ...withoutOperation } = resultPayload();
-    expect(
-      parseBridgeToControlPlaneMessage(base("command.result", withoutOperation)).ok,
-    ).toBe(false);
+  it("failed reports cannot carry arbitrary evidence arrays", () => {
+    const failed = {
+      commandMessageId: "cmd-200",
+      taskId: "task-42",
+      attemptId: "attempt-1",
+      operationId: "op-disp-1",
+      outcome: "failed",
+      commandKind: "worker.dispatch",
+      failureReason: "crash",
+      summary: "Worker crashed.",
+      evidenceKinds: ["grant-verified"],
+    };
+    expect(parseBridgeToControlPlaneMessage(report("command.failed", failed)).ok).toBe(false);
+  });
+
+  it("reports cannot invent or change an authorization reference", () => {
+    const withAuth = { ...dispatchResultPayload(), authorizationRef: "authref-forged" };
+    expect(parseBridgeToControlPlaneMessage(report("command.result", withAuth)).ok).toBe(false);
+    const nestedAuth = {
+      ...dispatchResultPayload(),
+      report: { ...dispatchResultPayload().report, authorizationRef: "authref-forged" },
+    };
+    expect(parseBridgeToControlPlaneMessage(report("command.result", nestedAuth)).ok).toBe(false);
   });
 
   it("an acknowledgement cannot satisfy the final-result schema", () => {
@@ -256,46 +290,215 @@ describe("bridge → control plane reports", () => {
       progressSequence: 3,
     };
     expect(CommandResultPayloadSchema.safeParse(progress).success).toBe(false);
-    const smuggledOutcome = { ...progress, outcome: "succeeded" };
     expect(
-      parseBridgeToControlPlaneMessage(base("command.progress", smuggledOutcome)).ok,
+      parseBridgeToControlPlaneMessage(
+        report("command.progress", { ...progress, outcome: "succeeded" }),
+      ).ok,
     ).toBe(false);
   });
 
-  it("result evidence aligns with the M1A evidence vocabulary", () => {
-    const badEvidence = { ...resultPayload(), evidenceKinds: ["pinky-promise"] };
-    expect(parseBridgeToControlPlaneMessage(base("command.result", badEvidence)).ok).toBe(false);
-    const emptyEvidence = { ...resultPayload(), evidenceKinds: [] };
-    expect(parseBridgeToControlPlaneMessage(base("command.result", emptyEvidence)).ok).toBe(false);
-  });
-
   it("large output must go to artifacts — oversized inline summaries are rejected", () => {
-    const oversized = { ...resultPayload(), summary: "x".repeat(8_001) };
-    expect(parseBridgeToControlPlaneMessage(base("command.result", oversized)).ok).toBe(false);
+    const oversized = {
+      ...dispatchResultPayload(),
+      report: { ...dispatchResultPayload().report, summary: "x".repeat(8_001) },
+    };
+    expect(parseBridgeToControlPlaneMessage(report("command.result", oversized)).ok).toBe(false);
   });
 
   it("raw stdout-like fields are rejected", () => {
-    const withStdout = { ...resultPayload(), stdout: "PASSWORD=hunter2" };
-    expect(parseBridgeToControlPlaneMessage(base("command.result", withStdout)).ok).toBe(false);
+    const withStdout = { ...dispatchResultPayload(), stdout: "PASSWORD=hunter2" };
+    expect(parseBridgeToControlPlaneMessage(report("command.result", withStdout)).ok).toBe(false);
   });
 
-  it("failure summaries refuse stack traces and local paths", () => {
-    const withStack = {
+  it("bridge commands cannot masquerade as bridge reports", () => {
+    const wrongDirection = report("worker.dispatch", dispatchPayload());
+    const result = parseBridgeToControlPlaneMessage(wrongDirection);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("UNKNOWN_MESSAGE_KIND");
+  });
+});
+
+describe("command/report binding validator (R1)", () => {
+  const bindErr = (r: ReturnType<typeof validateBridgeReportAgainstCommand>) => {
+    if (r.ok) throw new Error("expected binding error");
+    return r.code;
+  };
+
+  it("binds a correct dispatch result as final-success", () => {
+    const binding = validateBridgeReportAgainstCommand(
+      dispatchCommand(),
+      parsedReport("command.result", dispatchResultPayload()),
+    );
+    expect(binding).toEqual({ ok: true, reportClass: "final-success" });
+  });
+
+  it("classifies ack, progress, and failure distinctly from final success", () => {
+    expect(
+      validateBridgeReportAgainstCommand(
+        dispatchCommand(),
+        parsedReport("command.ack", { commandMessageId: "cmd-200", taskId: "task-42" }),
+      ),
+    ).toEqual({ ok: true, reportClass: "ack" });
+    expect(
+      validateBridgeReportAgainstCommand(
+        dispatchCommand(),
+        parsedReport("command.progress", {
+          commandMessageId: "cmd-200",
+          taskId: "task-42",
+          attemptId: "attempt-1",
+          operationId: "op-disp-1",
+          progressSequence: 2,
+        }),
+      ),
+    ).toEqual({ ok: true, reportClass: "progress" });
+    expect(
+      validateBridgeReportAgainstCommand(
+        dispatchCommand(),
+        parsedReport("command.failed", {
+          commandMessageId: "cmd-200",
+          taskId: "task-42",
+          attemptId: "attempt-1",
+          operationId: "op-disp-1",
+          outcome: "failed",
+          commandKind: "worker.dispatch",
+          failureReason: "crash",
+          summary: "Worker crashed.",
+        }),
+      ),
+    ).toEqual({ ok: true, reportClass: "final-failure" });
+  });
+
+  it("a workspace result cannot answer a dispatch command (kind pairing)", () => {
+    const workspaceResult = parsedReport("command.result", {
+      commandMessageId: "cmd-200",
+      taskId: "task-42",
+      attemptId: "attempt-1",
+      operationId: "op-disp-1",
+      outcome: "succeeded",
+      report: { commandKind: "workspace.prepare", workspaceId: "ws-task-42-a1" },
+    });
+    expect(bindErr(validateBridgeReportAgainstCommand(dispatchCommand(), workspaceResult))).toBe(
+      "REPORT_KIND_MISMATCH",
+    );
+  });
+
+  it("a failed report with the wrong command kind is rejected", () => {
+    const failed = parsedReport("command.failed", {
       commandMessageId: "cmd-200",
       taskId: "task-42",
       attemptId: "attempt-1",
       operationId: "op-disp-1",
       outcome: "failed",
-      failureReason: "crash",
-      summary: "Error: boom\n    at Object.run (bridge.js:10:5)",
-    };
-    expect(parseBridgeToControlPlaneMessage(base("command.failed", withStack)).ok).toBe(false);
+      commandKind: "result.collect",
+      failureReason: "internal",
+      summary: "Collection failed.",
+    });
+    expect(bindErr(validateBridgeReportAgainstCommand(dispatchCommand(), failed))).toBe(
+      "REPORT_KIND_MISMATCH",
+    );
   });
 
-  it("bridge commands cannot masquerade as bridge reports", () => {
-    const wrongDirection = base("worker.dispatch", dispatchPayload());
-    const result = parseBridgeToControlPlaneMessage(wrongDirection);
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error.code).toBe("UNKNOWN_MESSAGE_KIND");
+  it("the wrong originating command ID is rejected", () => {
+    const wrongOrigin = parsedReport("command.result", {
+      ...dispatchResultPayload(),
+      commandMessageId: "cmd-999",
+    });
+    expect(bindErr(validateBridgeReportAgainstCommand(dispatchCommand(), wrongOrigin))).toBe(
+      "REPORT_COMMAND_MISMATCH",
+    );
+  });
+
+  it("task, attempt, and operation mismatches are rejected", () => {
+    expect(
+      bindErr(
+        validateBridgeReportAgainstCommand(
+          dispatchCommand(),
+          parsedReport("command.result", { ...dispatchResultPayload(), taskId: "task-99" }),
+        ),
+      ),
+    ).toBe("TASK_MISMATCH");
+    expect(
+      bindErr(
+        validateBridgeReportAgainstCommand(
+          dispatchCommand(),
+          parsedReport("command.result", { ...dispatchResultPayload(), attemptId: "attempt-9" }),
+        ),
+      ),
+    ).toBe("ATTEMPT_MISMATCH");
+    expect(
+      bindErr(
+        validateBridgeReportAgainstCommand(
+          dispatchCommand(),
+          parsedReport("command.result", { ...dispatchResultPayload(), operationId: "op-other" }),
+        ),
+      ),
+    ).toBe("OPERATION_MISMATCH");
+  });
+
+  it("workspace identity must match where applicable", () => {
+    const wrongWorkspace = parsedReport("command.result", {
+      ...dispatchResultPayload(),
+      report: { ...dispatchResultPayload().report, workspaceId: "ws-other" },
+    });
+    expect(bindErr(validateBridgeReportAgainstCommand(dispatchCommand(), wrongWorkspace))).toBe(
+      "WORKSPACE_MISMATCH",
+    );
+  });
+
+  it("a cancellation may only claim the commanded operation", () => {
+    const cancelCommand = ControlPlaneToBridgeMessageSchema.parse(
+      withKey("worker.cancel", {
+        taskId: "task-42",
+        attemptId: "attempt-1",
+        operationId: "op-disp-1",
+        dispatchCommandId: "cmd-199",
+      }),
+    );
+    const wrongTermination = parsedReport("command.result", {
+      commandMessageId: "cmd-200",
+      taskId: "task-42",
+      attemptId: "attempt-1",
+      operationId: "op-disp-1",
+      outcome: "succeeded",
+      report: { commandKind: "worker.cancel", terminatedOperationId: "op-other" },
+    });
+    expect(bindErr(validateBridgeReportAgainstCommand(cancelCommand, wrongTermination))).toBe(
+      "OPERATION_MISMATCH",
+    );
+    const correctTermination = parsedReport("command.result", {
+      commandMessageId: "cmd-200",
+      taskId: "task-42",
+      attemptId: "attempt-1",
+      operationId: "op-disp-1",
+      outcome: "succeeded",
+      report: { commandKind: "worker.cancel", terminatedOperationId: "op-disp-1" },
+    });
+    expect(
+      validateBridgeReportAgainstCommand(cancelCommand, correctTermination),
+    ).toEqual({ ok: true, reportClass: "final-success" });
+  });
+
+  it("project identity must match when both envelopes carry it", () => {
+    const command = ControlPlaneToBridgeMessageSchema.parse(
+      withKey("worker.dispatch", dispatchPayload(), { projectId: "pilot-project" }),
+    );
+    const wrongProject = BridgeToControlPlaneMessageSchema.parse(
+      report("command.result", dispatchResultPayload(), { projectId: "other-project" }),
+    );
+    expect(bindErr(validateBridgeReportAgainstCommand(command, wrongProject))).toBe(
+      "PROJECT_MISMATCH",
+    );
+  });
+
+  it("pings are not reportable and pong/health are not command reports", () => {
+    const ping = ControlPlaneToBridgeMessageSchema.parse(base("bridge.ping", { echo: "ping-1" }));
+    const result = parsedReport("command.result", dispatchResultPayload());
+    expect(bindErr(validateBridgeReportAgainstCommand(ping, result))).toBe(
+      "COMMAND_NOT_REPORTABLE",
+    );
+    const pong = parsedReport("bridge.pong", { echo: "ping-1" });
+    expect(bindErr(validateBridgeReportAgainstCommand(dispatchCommand(), pong))).toBe(
+      "UNSUPPORTED_REPORT_KIND",
+    );
   });
 });

@@ -43,7 +43,7 @@ describe("client → control plane requests", () => {
         approvalRequestId: "appr-1",
         decision: "approve",
       }),
-      "task.cancel": withKey("task.cancel", { taskId: "task-42" }),
+      "task.cancel": withKey("task.cancel", { taskId: "task-42", attemptId: "attempt-1" }),
       "task.get": base("task.get", { taskId: "task-42" }),
       "task.list": base("task.list", { projectId: "pilot-project", limit: 20 }),
       "stream.resume": base("stream.resume", {
@@ -93,7 +93,7 @@ describe("client → control plane requests", () => {
         projectId: "pilot-project",
       },
       "approval.decide": { approvalRequestId: "appr-1", decision: "reject" },
-      "task.cancel": { taskId: "task-42" },
+      "task.cancel": { taskId: "task-42", attemptId: "attempt-1" },
     };
     for (const kind of MUTATING_CLIENT_KINDS) {
       const result = parseClientToControlPlaneMessage(base(kind, payloads[kind]));
@@ -115,6 +115,36 @@ describe("client → control plane requests", () => {
       );
       expect(parseClientToControlPlaneMessage(base(kind, payload)).ok, kind).toBe(true);
     }
+  });
+
+  it("task.cancel is attempt-bound (R1): missing attempt ID is rejected", () => {
+    expect(errCode(parseClientToControlPlaneMessage(withKey("task.cancel", { taskId: "task-42" })))).toBe(
+      "VALIDATION_ERROR",
+    );
+    expect(
+      parseClientToControlPlaneMessage(
+        withKey("task.cancel", { taskId: "task-42", attemptId: "attempt-1" }),
+      ).ok,
+    ).toBe(true);
+  });
+
+  it("envelope/payload task and attempt contradictions are rejected (R1)", () => {
+    const taskMismatch = {
+      ...withKey("task.cancel", { taskId: "task-42", attemptId: "attempt-1" }),
+      taskId: "task-99",
+    };
+    expect(errCode(parseClientToControlPlaneMessage(taskMismatch))).toBe("VALIDATION_ERROR");
+    const attemptMismatch = {
+      ...withKey("task.cancel", { taskId: "task-42", attemptId: "attempt-1" }),
+      attemptId: "attempt-9",
+    };
+    expect(errCode(parseClientToControlPlaneMessage(attemptMismatch))).toBe("VALIDATION_ERROR");
+    const consistent = {
+      ...withKey("task.cancel", { taskId: "task-42", attemptId: "attempt-1" }),
+      taskId: "task-42",
+      attemptId: "attempt-1",
+    };
+    expect(parseClientToControlPlaneMessage(consistent).ok).toBe(true);
   });
 
   it("approval decisions stay bounded — authority fields are rejected", () => {
@@ -241,15 +271,27 @@ describe("control plane → client messages", () => {
     expect(result.ok).toBe(false);
   });
 
-  it("blocked snapshots may carry the M1A blocked reason", () => {
-    const blocked = base("task.snapshot", {
-      taskId: "task-42",
-      projectId: "pilot-project",
-      state: "BLOCKED",
-      blockedReason: "execution-unknown",
-      updatedAt: "2026-07-11T09:00:00Z",
-    });
-    expect(parseControlPlaneToClientMessage(blocked).ok).toBe(true);
+  it("snapshot consistency (R1): BLOCKED requires its M1A blocked reason", () => {
+    const snapshot = (state: string, blockedReason?: string) =>
+      base("task.snapshot", {
+        taskId: "task-42",
+        projectId: "pilot-project",
+        state,
+        ...(blockedReason !== undefined ? { blockedReason } : {}),
+        updatedAt: "2026-07-11T09:00:00Z",
+      });
+    // BLOCKED with a valid reason is accepted.
+    expect(parseControlPlaneToClientMessage(snapshot("BLOCKED", "execution-unknown")).ok).toBe(true);
+    // BLOCKED without a reason is rejected.
+    expect(parseControlPlaneToClientMessage(snapshot("BLOCKED")).ok).toBe(false);
+    // Non-BLOCKED states reject a blocked reason.
+    for (const state of ["RUNNING", "COMPLETED", "FAILED", "DRAFT"]) {
+      expect(parseControlPlaneToClientMessage(snapshot(state, "queue-lock")).ok, state).toBe(false);
+    }
+    // Non-BLOCKED without a reason remains accepted.
+    for (const state of ["RUNNING", "COMPLETED", "FAILED"]) {
+      expect(parseControlPlaneToClientMessage(snapshot(state)).ok, state).toBe(true);
+    }
   });
 
   it("approval cards refuse markup and worker-authored authority fields", () => {

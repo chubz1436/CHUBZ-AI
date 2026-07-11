@@ -162,6 +162,7 @@ describe("text bounds", () => {
       idempotencyKey: "cancel-key-001",
       payload: {
         taskId: "task-42",
+        attemptId: "attempt-1",
         reasonNote: "x".repeat(PROTOCOL_LIMITS.maxStatusTextLength + 1),
       },
     };

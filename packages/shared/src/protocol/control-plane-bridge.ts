@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { TransitionEvidenceSchema } from "../task-transitions.js";
 import {
   IsoUtcTimestampSchema,
   PROTOCOL_LIMITS,
@@ -9,11 +8,13 @@ import {
   displayText,
   mutatingEnvelope,
   readonlyEnvelope,
+  requireConsistentIdentity,
 } from "./common.js";
 import { parseEnvelopeWith, type EnvelopeParseResult } from "./errors.js";
 
 /**
- * Control Plane ↔ Local Bridge protocol contracts (M1B, D-023).
+ * Control Plane ↔ Local Bridge protocol contracts (M1B, D-023; hardened
+ * by review round R1).
  *
  * TYPED HIGH-LEVEL OPERATIONS ONLY. There is no shell-command field, no
  * executable string, and no filesystem path anywhere in this direction:
@@ -23,9 +24,19 @@ import { parseEnvelopeWith, type EnvelopeParseResult } from "./errors.js";
  * Actual executable and workspace paths are internal Bridge
  * configuration resolved from these identifiers.
  *
- * `authorizationRef` is an OPAQUE, UNVERIFIED reference. Capability
- * grants, their schema, and their cryptography are M1C; nothing here
- * claims verification.
+ * EVIDENCE MODEL (R1): the Bridge NEVER asserts evidence kinds. Its
+ * final reports are typed per originating command kind
+ * (workspace.prepare / worker.dispatch / worker.cancel /
+ * result.collect), and the schemas have no field through which the
+ * Bridge could claim `owner-reconciliation`, `grant-verified`, or any
+ * Control-Plane/authority-derived evidence. The future Control Plane
+ * derives M1A transition evidence from the validated originating
+ * command, the validated report kind, and separately trusted
+ * owner/grant state — never from a Bridge assertion.
+ *
+ * `authorizationRef` exists ONLY on Control-Plane commands as an
+ * opaque, unverified reference (M1C owns grants); report schemas have
+ * no such field, so a report can neither change nor invent one.
  */
 
 /** Reference to a validated worker-manifest identity + version. */
@@ -45,10 +56,12 @@ export const BridgePingPayloadSchema = z.strictObject({
   echo: SafeIdSchema.optional(),
 });
 
+/** Every mutating command carries an explicit operationId (R1). */
 export const WorkspacePreparePayloadSchema = z.strictObject({
   projectId: SlugIdSchema,
   taskId: SafeIdSchema,
   attemptId: SafeIdSchema,
+  operationId: SafeIdSchema,
   workspaceId: SafeIdSchema,
   /** Git ref identifier (e.g. a commit hash) — an ID, never a path. */
   baseRef: SafeIdSchema.optional(),
@@ -118,14 +131,18 @@ export const MUTATING_BRIDGE_COMMAND_KINDS = Object.freeze([
   "worker.cancel",
   "result.collect",
 ] as const);
+export const MutatingBridgeCommandKindSchema = z.enum(MUTATING_BRIDGE_COMMAND_KINDS);
+export type MutatingBridgeCommandKind = z.infer<typeof MutatingBridgeCommandKindSchema>;
 
-export const ControlPlaneToBridgeMessageSchema = z.discriminatedUnion("messageKind", [
-  BridgePingMessageSchema,
-  WorkspacePrepareMessageSchema,
-  WorkerDispatchMessageSchema,
-  WorkerCancelMessageSchema,
-  ResultCollectMessageSchema,
-]);
+export const ControlPlaneToBridgeMessageSchema = requireConsistentIdentity(
+  z.discriminatedUnion("messageKind", [
+    BridgePingMessageSchema,
+    WorkspacePrepareMessageSchema,
+    WorkerDispatchMessageSchema,
+    WorkerCancelMessageSchema,
+    ResultCollectMessageSchema,
+  ]),
+);
 export type ControlPlaneToBridgeMessage = z.infer<typeof ControlPlaneToBridgeMessageSchema>;
 
 export function parseControlPlaneToBridgeMessage(
@@ -145,8 +162,8 @@ export const BridgePongPayloadSchema = z.strictObject({
 
 /**
  * Acknowledgement: "the command was received and journaled". It is NOT
- * execution proof and has neither an outcome nor evidence field, so it
- * can never satisfy a final-result schema.
+ * execution proof and has neither an outcome nor a report field, so it
+ * can never satisfy a final-report schema.
  */
 export const CommandAckPayloadSchema = z.strictObject({
   commandMessageId: SafeIdSchema,
@@ -166,21 +183,50 @@ export const CommandProgressPayloadSchema = z.strictObject({
 });
 
 /**
- * Final success report. Evidence kinds align with the M1A transition
- * evidence vocabulary (bridge-dispatch-ack, bridge-execution-report,
- * bridge-integration-report, …) without implementing transition
- * persistence. Large output goes to artifacts; the inline summary is
- * bounded plain text.
+ * Typed per-command success reports (R1). Each report kind is bound to
+ * exactly one originating command kind via the `commandKind`
+ * discriminator; there is no evidence field of any sort.
  */
+export const WorkspacePrepareReportSchema = z.strictObject({
+  commandKind: z.literal("workspace.prepare"),
+  workspaceId: SafeIdSchema,
+  /** The base ref the workspace was actually created from. */
+  resolvedBaseRef: SafeIdSchema.optional(),
+});
+export const WorkerDispatchReportSchema = z.strictObject({
+  commandKind: z.literal("worker.dispatch"),
+  workspaceId: SafeIdSchema,
+  summary: displayText(PROTOCOL_LIMITS.maxWorkerSummaryLength).optional(),
+  artifactIds: z.array(SafeIdSchema).max(PROTOCOL_LIMITS.maxMetadataEntries),
+});
+export const WorkerCancelReportSchema = z.strictObject({
+  commandKind: z.literal("worker.cancel"),
+  /** Must equal the originating command's operationId (validated). */
+  terminatedOperationId: SafeIdSchema,
+});
+export const ResultCollectReportSchema = z.strictObject({
+  commandKind: z.literal("result.collect"),
+  workspaceId: SafeIdSchema,
+  artifactIds: z.array(SafeIdSchema).max(PROTOCOL_LIMITS.maxMetadataEntries),
+  changedFileCount: z.number().int().min(0).optional(),
+  summary: displayText(PROTOCOL_LIMITS.maxWorkerSummaryLength).optional(),
+});
+
+export const BridgeCommandReportSchema = z.discriminatedUnion("commandKind", [
+  WorkspacePrepareReportSchema,
+  WorkerDispatchReportSchema,
+  WorkerCancelReportSchema,
+  ResultCollectReportSchema,
+]);
+export type BridgeCommandReport = z.infer<typeof BridgeCommandReportSchema>;
+
 export const CommandResultPayloadSchema = z.strictObject({
   commandMessageId: SafeIdSchema,
   taskId: SafeIdSchema,
   attemptId: SafeIdSchema,
   operationId: SafeIdSchema,
   outcome: z.literal("succeeded"),
-  evidenceKinds: z.array(TransitionEvidenceSchema).min(1).max(8),
-  summary: displayText(PROTOCOL_LIMITS.maxWorkerSummaryLength).optional(),
-  artifactIds: z.array(SafeIdSchema).max(PROTOCOL_LIMITS.maxMetadataEntries),
+  report: BridgeCommandReportSchema,
 });
 
 export const BRIDGE_FAILURE_REASONS = Object.freeze([
@@ -195,16 +241,16 @@ export const BRIDGE_FAILURE_REASONS = Object.freeze([
 export const BridgeFailureReasonSchema = z.enum(BRIDGE_FAILURE_REASONS);
 export type BridgeFailureReason = z.infer<typeof BridgeFailureReasonSchema>;
 
-/** Final failure report — distinct from ack and progress by construction. */
+/** Final failure report — typed to its originating command kind (R1). */
 export const CommandFailedPayloadSchema = z.strictObject({
   commandMessageId: SafeIdSchema,
   taskId: SafeIdSchema,
   attemptId: SafeIdSchema,
   operationId: SafeIdSchema,
   outcome: z.literal("failed"),
+  commandKind: MutatingBridgeCommandKindSchema,
   failureReason: BridgeFailureReasonSchema,
   summary: displayText(PROTOCOL_LIMITS.maxStatusTextLength),
-  evidenceKinds: z.array(TransitionEvidenceSchema).max(8).optional(),
   artifactIds: z.array(SafeIdSchema).max(PROTOCOL_LIMITS.maxMetadataEntries).optional(),
 });
 
@@ -243,18 +289,173 @@ export const BRIDGE_TO_CONTROL_PLANE_KINDS = Object.freeze([
   "bridge.health",
 ] as const);
 
-export const BridgeToControlPlaneMessageSchema = z.discriminatedUnion("messageKind", [
-  BridgePongMessageSchema,
-  CommandAckMessageSchema,
-  CommandProgressMessageSchema,
-  CommandResultMessageSchema,
-  CommandFailedMessageSchema,
-  BridgeHealthMessageSchema,
-]);
+export const BridgeToControlPlaneMessageSchema = requireConsistentIdentity(
+  z.discriminatedUnion("messageKind", [
+    BridgePongMessageSchema,
+    CommandAckMessageSchema,
+    CommandProgressMessageSchema,
+    CommandResultMessageSchema,
+    CommandFailedMessageSchema,
+    BridgeHealthMessageSchema,
+  ]),
+);
 export type BridgeToControlPlaneMessage = z.infer<typeof BridgeToControlPlaneMessageSchema>;
 
 export function parseBridgeToControlPlaneMessage(
   raw: unknown,
 ): EnvelopeParseResult<BridgeToControlPlaneMessage> {
   return parseEnvelopeWith(BridgeToControlPlaneMessageSchema, BRIDGE_TO_CONTROL_PLANE_KINDS, raw);
+}
+
+// ---------------------------------------------------------------------------
+// Command ↔ report binding validator (R1)
+// ---------------------------------------------------------------------------
+
+export const BRIDGE_BINDING_ERROR_CODES = Object.freeze([
+  "COMMAND_NOT_REPORTABLE",
+  "UNSUPPORTED_REPORT_KIND",
+  "REPORT_COMMAND_MISMATCH",
+  "REPORT_KIND_MISMATCH",
+  "TASK_MISMATCH",
+  "ATTEMPT_MISMATCH",
+  "OPERATION_MISMATCH",
+  "WORKSPACE_MISMATCH",
+  "PROJECT_MISMATCH",
+] as const);
+export type BridgeBindingErrorCode = (typeof BRIDGE_BINDING_ERROR_CODES)[number];
+
+export const BRIDGE_REPORT_CLASSES = Object.freeze([
+  "ack",
+  "progress",
+  "final-success",
+  "final-failure",
+] as const);
+export type BridgeReportClass = (typeof BRIDGE_REPORT_CLASSES)[number];
+
+export type BridgeReportBinding =
+  | { readonly ok: true; readonly reportClass: BridgeReportClass }
+  | { readonly ok: false; readonly code: BridgeBindingErrorCode; readonly message: string };
+
+const bindingError = (code: BridgeBindingErrorCode, message: string): BridgeReportBinding =>
+  Object.freeze({ ok: false, code, message });
+
+/**
+ * Pure, deterministic binding validator: does this Bridge report belong
+ * to exactly this originating command? No persistence, no lookup — the
+ * future Control Plane loads the command it recorded and calls this.
+ *
+ * Guarantees (all tested): exact originating command message ID; command
+ * kind ↔ report kind pairing; task/attempt/operation identity; workspace
+ * and project identity where applicable; final results and failures are
+ * classified distinctly from ack/progress, which are never final proof.
+ * Authorization references cannot be changed or invented because report
+ * schemas carry no such field at all.
+ */
+export function validateBridgeReportAgainstCommand(
+  command: ControlPlaneToBridgeMessage,
+  report: BridgeToControlPlaneMessage,
+): BridgeReportBinding {
+  const cmd = ControlPlaneToBridgeMessageSchema.parse(command);
+  const rpt = BridgeToControlPlaneMessageSchema.parse(report);
+
+  if (cmd.messageKind === "bridge.ping") {
+    return bindingError(
+      "COMMAND_NOT_REPORTABLE",
+      "bridge.ping is answered by bridge.pong, not by command reports.",
+    );
+  }
+  if (rpt.messageKind === "bridge.pong" || rpt.messageKind === "bridge.health") {
+    return bindingError(
+      "UNSUPPORTED_REPORT_KIND",
+      `${rpt.messageKind} is not a command report and cannot be bound to a command.`,
+    );
+  }
+
+  if (rpt.payload.commandMessageId !== cmd.messageId) {
+    return bindingError(
+      "REPORT_COMMAND_MISMATCH",
+      `The report references command ${rpt.payload.commandMessageId}, not ${cmd.messageId}.`,
+    );
+  }
+
+  if (rpt.messageKind === "command.result" && rpt.payload.report.commandKind !== cmd.messageKind) {
+    return bindingError(
+      "REPORT_KIND_MISMATCH",
+      `A ${rpt.payload.report.commandKind} result cannot answer a ${cmd.messageKind} command.`,
+    );
+  }
+  if (rpt.messageKind === "command.failed" && rpt.payload.commandKind !== cmd.messageKind) {
+    return bindingError(
+      "REPORT_KIND_MISMATCH",
+      `A ${rpt.payload.commandKind} failure cannot answer a ${cmd.messageKind} command.`,
+    );
+  }
+
+  const commandPayload = cmd.payload as Record<string, unknown>;
+  const reportPayload = rpt.payload as Record<string, unknown>;
+
+  const identityChecks: readonly [string, BridgeBindingErrorCode][] = [
+    ["taskId", "TASK_MISMATCH"],
+    ["attemptId", "ATTEMPT_MISMATCH"],
+    ["operationId", "OPERATION_MISMATCH"],
+  ];
+  for (const [field, code] of identityChecks) {
+    const commandValue = commandPayload[field];
+    const reportValue = reportPayload[field];
+    if (
+      typeof commandValue === "string" &&
+      typeof reportValue === "string" &&
+      commandValue !== reportValue
+    ) {
+      return bindingError(
+        code,
+        `The report's ${field} '${reportValue}' does not match the command's '${commandValue}'.`,
+      );
+    }
+  }
+
+  if (rpt.messageKind === "command.result") {
+    const nested = rpt.payload.report;
+    if (
+      "workspaceId" in nested &&
+      typeof commandPayload["workspaceId"] === "string" &&
+      nested.workspaceId !== commandPayload["workspaceId"]
+    ) {
+      return bindingError(
+        "WORKSPACE_MISMATCH",
+        `The report's workspace '${nested.workspaceId}' does not match the command's '${String(commandPayload["workspaceId"])}'.`,
+      );
+    }
+    if (
+      nested.commandKind === "worker.cancel" &&
+      typeof commandPayload["operationId"] === "string" &&
+      nested.terminatedOperationId !== commandPayload["operationId"]
+    ) {
+      return bindingError(
+        "OPERATION_MISMATCH",
+        `The cancellation claims it terminated '${nested.terminatedOperationId}', not the commanded operation '${String(commandPayload["operationId"])}'.`,
+      );
+    }
+  }
+
+  if (
+    typeof cmd.projectId === "string" &&
+    typeof rpt.projectId === "string" &&
+    cmd.projectId !== rpt.projectId
+  ) {
+    return bindingError(
+      "PROJECT_MISMATCH",
+      `The report's project '${rpt.projectId}' does not match the command's '${cmd.projectId}'.`,
+    );
+  }
+
+  const reportClass: BridgeReportClass =
+    rpt.messageKind === "command.ack"
+      ? "ack"
+      : rpt.messageKind === "command.progress"
+        ? "progress"
+        : rpt.messageKind === "command.result"
+          ? "final-success"
+          : "final-failure";
+  return Object.freeze({ ok: true, reportClass });
 }
