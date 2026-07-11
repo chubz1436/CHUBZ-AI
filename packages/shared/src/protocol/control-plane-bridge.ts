@@ -182,6 +182,30 @@ export const CommandProgressPayloadSchema = z.strictObject({
   note: displayText(PROTOCOL_LIMITS.maxStatusTextLength).optional(),
 });
 
+/** Immutable git commit identity: lowercase hex, abbreviated or full. */
+export const GitCommitIdSchema = z
+  .string()
+  .regex(/^[0-9a-f]{7,64}$/, "must be a lowercase hex commit id (7-64 chars)");
+export type GitCommitId = z.infer<typeof GitCommitIdSchema>;
+
+/**
+ * Base-ref provenance for workspace preparation (R1 final patch): the
+ * report must prove WHICH requested ref it processed and WHICH
+ * immutable commit it resolved to — or state explicitly that no base
+ * was requested. An ambiguous optional ref is not representable.
+ */
+export const WorkspaceBaseResolutionSchema = z.discriminatedUnion("kind", [
+  z.strictObject({ kind: z.literal("not-requested") }),
+  z.strictObject({
+    kind: z.literal("resolved"),
+    /** Must equal the originating command's baseRef (validated). */
+    requestedRef: SafeIdSchema,
+    /** The immutable commit the workspace was actually created from. */
+    resolvedCommitId: GitCommitIdSchema,
+  }),
+]);
+export type WorkspaceBaseResolution = z.infer<typeof WorkspaceBaseResolutionSchema>;
+
 /**
  * Typed per-command success reports (R1). Each report kind is bound to
  * exactly one originating command kind via the `commandKind`
@@ -190,8 +214,7 @@ export const CommandProgressPayloadSchema = z.strictObject({
 export const WorkspacePrepareReportSchema = z.strictObject({
   commandKind: z.literal("workspace.prepare"),
   workspaceId: SafeIdSchema,
-  /** The base ref the workspace was actually created from. */
-  resolvedBaseRef: SafeIdSchema.optional(),
+  baseResolution: WorkspaceBaseResolutionSchema,
 });
 export const WorkerDispatchReportSchema = z.strictObject({
   commandKind: z.literal("worker.dispatch"),
@@ -321,6 +344,7 @@ export const BRIDGE_BINDING_ERROR_CODES = Object.freeze([
   "OPERATION_MISMATCH",
   "WORKSPACE_MISMATCH",
   "PROJECT_MISMATCH",
+  "BASE_REF_MISMATCH",
 ] as const);
 export type BridgeBindingErrorCode = (typeof BRIDGE_BINDING_ERROR_CODES)[number];
 
@@ -436,16 +460,49 @@ export function validateBridgeReportAgainstCommand(
         `The cancellation claims it terminated '${nested.terminatedOperationId}', not the commanded operation '${String(commandPayload["operationId"])}'.`,
       );
     }
+    // Base-ref provenance (R1 final patch): the workspace report must
+    // account for exactly the base the command requested — no more, no
+    // less — and name the immutable commit it resolved to.
+    if (nested.commandKind === "workspace.prepare") {
+      const requestedBase = commandPayload["baseRef"];
+      if (typeof requestedBase === "string") {
+        if (nested.baseResolution.kind !== "resolved") {
+          return bindingError(
+            "BASE_REF_MISMATCH",
+            `The command requested base ref '${requestedBase}' but the report claims no base was requested.`,
+          );
+        }
+        if (nested.baseResolution.requestedRef !== requestedBase) {
+          return bindingError(
+            "BASE_REF_MISMATCH",
+            `The report resolved ref '${nested.baseResolution.requestedRef}', not the commanded base ref '${requestedBase}'.`,
+          );
+        }
+      } else if (nested.baseResolution.kind !== "not-requested") {
+        return bindingError(
+          "BASE_REF_MISMATCH",
+          "The report claims it resolved a base ref, but the command requested none.",
+        );
+      }
+    }
   }
 
+  // Authoritative project identity (R1 final patch): a command's project
+  // may live on its envelope or in its payload (envelope/payload
+  // contradiction is already rejected at parse time by
+  // requireConsistentIdentity). A report claiming any project must match
+  // the authoritative value wherever it came from.
+  const payloadProjectId = commandPayload["projectId"];
+  const authoritativeProjectId =
+    cmd.projectId ?? (typeof payloadProjectId === "string" ? payloadProjectId : undefined);
   if (
-    typeof cmd.projectId === "string" &&
+    typeof authoritativeProjectId === "string" &&
     typeof rpt.projectId === "string" &&
-    cmd.projectId !== rpt.projectId
+    authoritativeProjectId !== rpt.projectId
   ) {
     return bindingError(
       "PROJECT_MISMATCH",
-      `The report's project '${rpt.projectId}' does not match the command's '${cmd.projectId}'.`,
+      `The report's project '${rpt.projectId}' does not match the command's authoritative project '${authoritativeProjectId}'.`,
     );
   }
 

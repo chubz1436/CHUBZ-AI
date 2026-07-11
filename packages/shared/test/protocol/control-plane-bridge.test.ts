@@ -375,7 +375,11 @@ describe("command/report binding validator (R1)", () => {
       attemptId: "attempt-1",
       operationId: "op-disp-1",
       outcome: "succeeded",
-      report: { commandKind: "workspace.prepare", workspaceId: "ws-task-42-a1" },
+      report: {
+        commandKind: "workspace.prepare",
+        workspaceId: "ws-task-42-a1",
+        baseResolution: { kind: "not-requested" },
+      },
     });
     expect(bindErr(validateBridgeReportAgainstCommand(dispatchCommand(), workspaceResult))).toBe(
       "REPORT_KIND_MISMATCH",
@@ -476,6 +480,161 @@ describe("command/report binding validator (R1)", () => {
     expect(
       validateBridgeReportAgainstCommand(cancelCommand, correctTermination),
     ).toEqual({ ok: true, reportClass: "final-success" });
+  });
+
+  it("regression: payload-borne project identity is authoritative even when the command envelope omits it", () => {
+    // Command envelope has NO projectId; the payload carries project-a.
+    const command = ControlPlaneToBridgeMessageSchema.parse(
+      withKey("worker.dispatch", { ...dispatchPayload(), projectId: "project-a" }),
+    );
+    const claimsProjectB = BridgeToControlPlaneMessageSchema.parse(
+      report("command.result", dispatchResultPayload(), { projectId: "project-b" }),
+    );
+    expect(bindErr(validateBridgeReportAgainstCommand(command, claimsProjectB))).toBe(
+      "PROJECT_MISMATCH",
+    );
+    // Matching report project is accepted.
+    const claimsProjectA = BridgeToControlPlaneMessageSchema.parse(
+      report("command.result", dispatchResultPayload(), { projectId: "project-a" }),
+    );
+    expect(validateBridgeReportAgainstCommand(command, claimsProjectA)).toEqual({
+      ok: true,
+      reportClass: "final-success",
+    });
+    // A report that omits the project entirely remains acceptable.
+    const omitsProject = parsedReport("command.result", dispatchResultPayload());
+    expect(validateBridgeReportAgainstCommand(command, omitsProject)).toEqual({
+      ok: true,
+      reportClass: "final-success",
+    });
+  });
+
+  describe("workspace base-ref provenance", () => {
+    const prepareCommand = (baseRef?: string) =>
+      ControlPlaneToBridgeMessageSchema.parse(
+        withKey("workspace.prepare", {
+          projectId: "pilot-project",
+          taskId: "task-42",
+          attemptId: "attempt-1",
+          operationId: "op-prep-1",
+          workspaceId: "ws-task-42-a1",
+          ...(baseRef !== undefined ? { baseRef } : {}),
+        }),
+      );
+    const prepareResult = (baseResolution: unknown) =>
+      parsedReport("command.result", {
+        commandMessageId: "cmd-200",
+        taskId: "task-42",
+        attemptId: "attempt-1",
+        operationId: "op-prep-1",
+        outcome: "succeeded",
+        report: {
+          commandKind: "workspace.prepare",
+          workspaceId: "ws-task-42-a1",
+          baseResolution,
+        },
+      });
+
+    it("a resolved base naming the commanded ref and an immutable commit is accepted", () => {
+      expect(
+        validateBridgeReportAgainstCommand(
+          prepareCommand("a1b2c3d4e5"),
+          prepareResult({
+            kind: "resolved",
+            requestedRef: "a1b2c3d4e5",
+            resolvedCommitId: "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+          }),
+        ),
+      ).toEqual({ ok: true, reportClass: "final-success" });
+    });
+
+    it("not-requested is accepted only when the command requested no base", () => {
+      expect(
+        validateBridgeReportAgainstCommand(
+          prepareCommand(),
+          prepareResult({ kind: "not-requested" }),
+        ),
+      ).toEqual({ ok: true, reportClass: "final-success" });
+      expect(
+        bindErr(
+          validateBridgeReportAgainstCommand(
+            prepareCommand("a1b2c3d4e5"),
+            prepareResult({ kind: "not-requested" }),
+          ),
+        ),
+      ).toBe("BASE_REF_MISMATCH");
+    });
+
+    it("resolving a ref that was never requested is rejected", () => {
+      expect(
+        bindErr(
+          validateBridgeReportAgainstCommand(
+            prepareCommand(),
+            prepareResult({
+              kind: "resolved",
+              requestedRef: "a1b2c3d4e5",
+              resolvedCommitId: "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+            }),
+          ),
+        ),
+      ).toBe("BASE_REF_MISMATCH");
+    });
+
+    it("resolving a different ref than commanded is rejected", () => {
+      expect(
+        bindErr(
+          validateBridgeReportAgainstCommand(
+            prepareCommand("a1b2c3d4e5"),
+            prepareResult({
+              kind: "resolved",
+              requestedRef: "other-ref-1",
+              resolvedCommitId: "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+            }),
+          ),
+        ),
+      ).toBe("BASE_REF_MISMATCH");
+    });
+
+    it("the resolved commit must be an immutable lowercase hex id", () => {
+      for (const resolvedCommitId of ["MAIN", "A1B2C3D4E5", "abc12", "refs-heads-main"]) {
+        expect(
+          parseBridgeToControlPlaneMessage(
+            report("command.result", {
+              commandMessageId: "cmd-200",
+              taskId: "task-42",
+              attemptId: "attempt-1",
+              operationId: "op-prep-1",
+              outcome: "succeeded",
+              report: {
+                commandKind: "workspace.prepare",
+                workspaceId: "ws-task-42-a1",
+                baseResolution: { kind: "resolved", requestedRef: "a1b2c3d4e5", resolvedCommitId },
+              },
+            }),
+          ).ok,
+          resolvedCommitId,
+        ).toBe(false);
+      }
+    });
+
+    it("the old ambiguous resolvedBaseRef field is no longer representable", () => {
+      expect(
+        parseBridgeToControlPlaneMessage(
+          report("command.result", {
+            commandMessageId: "cmd-200",
+            taskId: "task-42",
+            attemptId: "attempt-1",
+            operationId: "op-prep-1",
+            outcome: "succeeded",
+            report: {
+              commandKind: "workspace.prepare",
+              workspaceId: "ws-task-42-a1",
+              resolvedBaseRef: "a1b2c3d4e5",
+            },
+          }),
+        ).ok,
+      ).toBe(false);
+    });
   });
 
   it("project identity must match when both envelopes carry it", () => {
