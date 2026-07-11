@@ -12,7 +12,9 @@ Worker roles throughout (per D-005, as amended by **D-019**): **BUNSO using Fabl
 
 ## Phase 0 — Design Acceptance and Local Prerequisites
 
-> **PHASE 0 STATUS: COMPLETE (conditional pass).** Phase 0A is completed. Phase 0B was executed by Antigravity with a **CONDITIONAL PASS** ([PHASE0B_OPERATIONAL_VALIDATION_REPORT.md](PHASE0B_OPERATIONAL_VALIDATION_REPORT.md)); the owner reviewed it and issued the M1A GO. **Current: M1A completed on `task/m1a-core-contracts` (not merged); Bantay/Codex review is current; merge approval pending; M1B pending and not authorized.**
+> **PHASE 0 STATUS: COMPLETE.** Phase 0A — completed. Phase 0B — completed with a **CONDITIONAL PASS** ([PHASE0B_OPERATIONAL_VALIDATION_REPORT.md](PHASE0B_OPERATIONAL_VALIDATION_REPORT.md)); the owner reviewed it and issued the M1A GO.
+>
+> **M1A STATUS:** implementation **completed** on `task/m1a-core-contracts`; Bantay review and Codex independent verification **completed**; owner merge GO **granted**; fast-forward merge to `main` **current**. **M1B remains pending and unauthorized.** Pilot-project selection and Obsidian-vault location are deferred inputs, not M1A completion blockers.
 
 **Objective:** convert this design package into owner-accepted decisions and verify the PC is actually ready — without writing application code.
 
@@ -204,7 +206,7 @@ Why M1A first: it is the smallest fully bounded start, zero-risk (no I/O), force
 |---|---|---|
 | 0A | Owner GO on this package post-Bantay review — **granted** | Decisions resolved — **completed** |
 | 0B | Phase 0A complete — **entered** | Antigravity validation executed and U-1/U-2 answered, then owner reviews the report — **completed, conditional pass** |
-| 1 | Phase 0B passed, owner reviewed the validation report, and owner recorded an explicit GO — **granted for M1A only; M1A completed on its task branch, review current, merge pending; M1B+ still needs its own GO** | Live demo + acceptance list + security reviews |
+| 1 | Phase 0B passed, owner reviewed the validation report, and owner recorded an explicit GO — **granted for M1A only; M1A completed and reviewed on its task branch, owner merge GO granted, fast-forward merge to `main` current; M1B+ still needs its own GO** | Live demo + acceptance list + security reviews |
 | 2 | Owner GO | §18 checklist evidenced; explicit remote-enable decision |
 | 3 | Owner GO | Adapter contract suite green per adapter |
 | 4 | Owner GO | Concurrency + hardening acceptance tests |

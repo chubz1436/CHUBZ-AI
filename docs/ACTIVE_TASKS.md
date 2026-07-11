@@ -1,27 +1,28 @@
 # Active Tasks
 
-> **STATUS: M1A COMPLETED ON TASK BRANCH `task/m1a-core-contracts` — BANTAY/CODEX REVIEW CURRENT. MERGE NOT APPROVED. M1B NOT AUTHORIZED.**
+> **STATUS: M1A COMPLETED AND REVIEWED ON `task/m1a-core-contracts` — OWNER MERGE GO GRANTED. FAST-FORWARD MERGE TO `main` CURRENT. M1B NOT AUTHORIZED.**
 
 ## Project lifecycle status
 
-1. **Completed** — Architecture design (BUNSO using Fable 5), Bantay review (revisions R1–R7 applied), and owner architecture decisions (D-001 … D-021).
+1. **Completed** — Architecture design (BUNSO using Fable 5), Bantay review (revisions R1–R7 applied), and owner architecture decisions (D-001 … D-022).
 2. **Completed** — Phase 0A documentation and decision prerequisites.
 3. **Completed — conditional pass** — Antigravity Phase 0B operational feasibility validation ([PHASE0B_OPERATIONAL_VALIDATION_REPORT.md](PHASE0B_OPERATIONAL_VALIDATION_REPORT.md)).
-4. **Completed on task branch** — BUNSO/Fable 5 M1A Core Contracts implementation (`task/m1a-core-contracts`; **not merged to `main`**).
-5. **Current** — M1A Bantay/Codex review, including the owner-directed final blocked-context and manifest hardening correction (D-021).
-6. **Pending** — Owner merge approval for M1A.
-7. **Pending and not authorized** — M1B Protocol Contracts (requires its own explicit owner GO), then M1C … M1E one at a time, each after owner approval of the previous review.
+4. **Completed** — BUNSO/Fable 5 M1A Core Contracts implementation on `task/m1a-core-contracts`.
+5. **Completed** — Bantay review and Codex independent verification of M1A, including the owner-directed hardening corrections (D-021 and D-022).
+6. **Granted** — Owner merge GO for M1A.
+7. **Current** — Fast-forward merge of `task/m1a-core-contracts` into `main`.
+8. **Pending and not authorized** — M1B Protocol Contracts (requires its own explicit owner GO), then M1C … M1E one at a time, each after owner approval of the previous review.
 
 Earlier project bootstrap and worker onboarding (Codex, BUNSO, Antigravity) are complete and precede item 1.
 
-## Current task detail — M1A review
+## Current task detail — M1A merge
 
-Under review on branch `task/m1a-core-contracts`: `packages/shared` core contracts (task states, trusted blocked context, legal transitions with evidence corroboration and stage-aware reconciliation, twelve-command grammar, worker-manifest schema) plus exhaustive unit tests.
+`packages/shared` core contracts (task states, trusted blocked context, legal transitions with evidence corroboration and stage-aware reconciliation, twelve-command grammar, worker-manifest schema) plus exhaustive unit tests are complete on `task/m1a-core-contracts` and independently verified.
 
-- Reviewers: Bantay (scope, architecture compliance, safety) and Codex (independent code review, per D-019 — BUNSO cannot review its own implementation).
-- Outcome required: review findings resolved, then an explicit owner merge GO before `task/m1a-core-contracts` may merge into `main`.
+- Reviewers: Bantay (scope, architecture compliance, safety) and Codex (independent code review, per D-019 — BUNSO cannot review its own implementation). **Both completed.**
+- Owner merge GO **granted**; the fast-forward merge into `main` is in progress. This file will record the merge as completed only after it actually succeeds.
 
-Owner still to provide (needed before Phase 1 runtime work, not blocking M1A review): the Obsidian vault path (U-7) and the pilot project choice. Cloudflare account status (U-6) is needed only before Phase 2.
+Deferred owner inputs (not M1A blockers, per D-022): the Obsidian vault path (U-7) remains configurable, and the pilot project remains uncreated and is needed only when a later runnable workflow requires it. Cloudflare account status (U-6) is needed only before Phase 2.
 
 ## Implementation-worker assignment (per D-019)
 
@@ -32,8 +33,8 @@ Owner still to provide (needed before Phase 1 runtime work, not blocking M1A rev
 
 ## Authorization boundary
 
-M1A work exists only on the task branch; **merging it into `main` requires an explicit owner GO** that has not been given.
+The owner merge GO for M1A is **granted**; the fast-forward merge into `main` is authorized and in progress.
 
-**M1B is pending and not authorized.** It requires M1A review completion, owner merge approval, and its own explicit owner GO before any M1B coding begins.
+**M1B is pending and not authorized.** It requires its own explicit owner GO before any M1B coding begins.
 
 Nothing in this file authorizes runtime orchestration, worker connection, domain or tunnel configuration, server access, MikroTik access, deployment, restart, infrastructure changes, or production actions.
