@@ -182,11 +182,21 @@ export const CommandProgressPayloadSchema = z.strictObject({
   note: displayText(PROTOCOL_LIMITS.maxStatusTextLength).optional(),
 });
 
-/** Immutable git commit identity: lowercase hex, abbreviated or full. */
+/**
+ * Immutable git commit identity: FULL lowercase hex only — exactly 40
+ * (SHA-1) or exactly 64 (SHA-256) characters. Abbreviated hashes are
+ * not immutable protocol identity and are rejected.
+ */
 export const GitCommitIdSchema = z
   .string()
-  .regex(/^[0-9a-f]{7,64}$/, "must be a lowercase hex commit id (7-64 chars)");
+  .regex(
+    /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/,
+    "must be a full lowercase hex commit id (exactly 40 or 64 chars)",
+  );
 export type GitCommitId = z.infer<typeof GitCommitIdSchema>;
+
+/** Case-insensitive test for a FULL commit id (request-side classification). */
+const FULL_COMMIT_ID = /^(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})$/;
 
 /**
  * Base-ref provenance for workspace preparation (R1 final patch): the
@@ -344,7 +354,9 @@ export const BRIDGE_BINDING_ERROR_CODES = Object.freeze([
   "OPERATION_MISMATCH",
   "WORKSPACE_MISMATCH",
   "PROJECT_MISMATCH",
-  "BASE_REF_MISMATCH",
+  "BASE_REF_MODE_MISMATCH",
+  "REQUESTED_BASE_REF_MISMATCH",
+  "RESOLVED_COMMIT_MISMATCH",
 ] as const);
 export type BridgeBindingErrorCode = (typeof BRIDGE_BINDING_ERROR_CODES)[number];
 
@@ -460,27 +472,40 @@ export function validateBridgeReportAgainstCommand(
         `The cancellation claims it terminated '${nested.terminatedOperationId}', not the commanded operation '${String(commandPayload["operationId"])}'.`,
       );
     }
-    // Base-ref provenance (R1 final patch): the workspace report must
-    // account for exactly the base the command requested — no more, no
-    // less — and name the immutable commit it resolved to.
+    // Base-ref provenance (R1): the workspace report must account for
+    // exactly the base the command requested — no more, no less — and
+    // name the FULL immutable commit it resolved to. When the command
+    // itself pinned a full commit id, the resolution must be that exact
+    // commit (compared case-insensitively via lowercase normalization);
+    // a symbolic ref (e.g. "main") must be echoed exactly but may
+    // resolve to any full immutable commit.
     if (nested.commandKind === "workspace.prepare") {
       const requestedBase = commandPayload["baseRef"];
       if (typeof requestedBase === "string") {
         if (nested.baseResolution.kind !== "resolved") {
           return bindingError(
-            "BASE_REF_MISMATCH",
+            "BASE_REF_MODE_MISMATCH",
             `The command requested base ref '${requestedBase}' but the report claims no base was requested.`,
           );
         }
         if (nested.baseResolution.requestedRef !== requestedBase) {
           return bindingError(
-            "BASE_REF_MISMATCH",
+            "REQUESTED_BASE_REF_MISMATCH",
             `The report resolved ref '${nested.baseResolution.requestedRef}', not the commanded base ref '${requestedBase}'.`,
           );
         }
+        if (FULL_COMMIT_ID.test(requestedBase)) {
+          const immutableRequested = requestedBase.toLowerCase();
+          if (nested.baseResolution.resolvedCommitId !== immutableRequested) {
+            return bindingError(
+              "RESOLVED_COMMIT_MISMATCH",
+              `The command pinned immutable commit '${immutableRequested}' but the workspace was created from '${nested.baseResolution.resolvedCommitId}'.`,
+            );
+          }
+        }
       } else if (nested.baseResolution.kind !== "not-requested") {
         return bindingError(
-          "BASE_REF_MISMATCH",
+          "BASE_REF_MODE_MISMATCH",
           "The report claims it resolved a base ref, but the command requested none.",
         );
       }

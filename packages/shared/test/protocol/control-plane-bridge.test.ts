@@ -562,7 +562,7 @@ describe("command/report binding validator (R1)", () => {
             prepareResult({ kind: "not-requested" }),
           ),
         ),
-      ).toBe("BASE_REF_MISMATCH");
+      ).toBe("BASE_REF_MODE_MISMATCH");
     });
 
     it("resolving a ref that was never requested is rejected", () => {
@@ -577,7 +577,7 @@ describe("command/report binding validator (R1)", () => {
             }),
           ),
         ),
-      ).toBe("BASE_REF_MISMATCH");
+      ).toBe("BASE_REF_MODE_MISMATCH");
     });
 
     it("resolving a different ref than commanded is rejected", () => {
@@ -592,7 +592,131 @@ describe("command/report binding validator (R1)", () => {
             }),
           ),
         ),
-      ).toBe("BASE_REF_MISMATCH");
+      ).toBe("REQUESTED_BASE_REF_MISMATCH");
+    });
+
+    it("full 40- and 64-character lowercase commits are accepted", () => {
+      for (const resolvedCommitId of ["ab".repeat(20), "ab".repeat(32)]) {
+        expect(
+          validateBridgeReportAgainstCommand(
+            prepareCommand("main"),
+            prepareResult({ kind: "resolved", requestedRef: "main", resolvedCommitId }),
+          ),
+          `${resolvedCommitId.length} chars`,
+        ).toEqual({ ok: true, reportClass: "final-success" });
+      }
+    });
+
+    it("a symbolic ref must be echoed exactly but may resolve to any full commit", () => {
+      expect(
+        validateBridgeReportAgainstCommand(
+          prepareCommand("main"),
+          prepareResult({
+            kind: "resolved",
+            requestedRef: "main",
+            resolvedCommitId: "cd".repeat(20),
+          }),
+        ),
+      ).toEqual({ ok: true, reportClass: "final-success" });
+    });
+
+    it("an immutable 40-character request must resolve to exactly itself", () => {
+      const pinned = "ab".repeat(20);
+      expect(
+        validateBridgeReportAgainstCommand(
+          prepareCommand(pinned),
+          prepareResult({ kind: "resolved", requestedRef: pinned, resolvedCommitId: pinned }),
+        ),
+      ).toEqual({ ok: true, reportClass: "final-success" });
+      expect(
+        bindErr(
+          validateBridgeReportAgainstCommand(
+            prepareCommand(pinned),
+            prepareResult({
+              kind: "resolved",
+              requestedRef: pinned,
+              resolvedCommitId: "cd".repeat(20),
+            }),
+          ),
+        ),
+      ).toBe("RESOLVED_COMMIT_MISMATCH");
+    });
+
+    it("an immutable 64-character request must resolve to exactly itself", () => {
+      const pinned = "ab".repeat(32);
+      expect(
+        validateBridgeReportAgainstCommand(
+          prepareCommand(pinned),
+          prepareResult({ kind: "resolved", requestedRef: pinned, resolvedCommitId: pinned }),
+        ),
+      ).toEqual({ ok: true, reportClass: "final-success" });
+      expect(
+        bindErr(
+          validateBridgeReportAgainstCommand(
+            prepareCommand(pinned),
+            prepareResult({
+              kind: "resolved",
+              requestedRef: pinned,
+              resolvedCommitId: "cd".repeat(32),
+            }),
+          ),
+        ),
+      ).toBe("RESOLVED_COMMIT_MISMATCH");
+    });
+
+    it("an uppercase immutable request is classified case-insensitively and normalized", () => {
+      const pinnedUpper = "AB".repeat(20);
+      expect(
+        validateBridgeReportAgainstCommand(
+          prepareCommand(pinnedUpper),
+          prepareResult({
+            kind: "resolved",
+            requestedRef: pinnedUpper,
+            resolvedCommitId: "ab".repeat(20),
+          }),
+        ),
+      ).toEqual({ ok: true, reportClass: "final-success" });
+      expect(
+        bindErr(
+          validateBridgeReportAgainstCommand(
+            prepareCommand(pinnedUpper),
+            prepareResult({
+              kind: "resolved",
+              requestedRef: pinnedUpper,
+              resolvedCommitId: "cd".repeat(20),
+            }),
+          ),
+        ),
+      ).toBe("RESOLVED_COMMIT_MISMATCH");
+    });
+
+    it("abbreviated and invalid commit lengths are rejected by the schema", () => {
+      for (const resolvedCommitId of [
+        "a".repeat(7),
+        "a".repeat(12),
+        "a".repeat(39),
+        "a".repeat(41),
+        "a".repeat(63),
+        "a".repeat(65),
+      ]) {
+        expect(
+          parseBridgeToControlPlaneMessage(
+            report("command.result", {
+              commandMessageId: "cmd-200",
+              taskId: "task-42",
+              attemptId: "attempt-1",
+              operationId: "op-prep-1",
+              outcome: "succeeded",
+              report: {
+                commandKind: "workspace.prepare",
+                workspaceId: "ws-task-42-a1",
+                baseResolution: { kind: "resolved", requestedRef: "main", resolvedCommitId },
+              },
+            }),
+          ).ok,
+          `${resolvedCommitId.length} chars`,
+        ).toBe(false);
+      }
     });
 
     it("the resolved commit must be an immutable lowercase hex id", () => {
