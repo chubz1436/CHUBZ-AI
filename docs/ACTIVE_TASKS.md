@@ -1,25 +1,22 @@
 # Active Tasks
 
-> **STATUS: M1A CORE CONTRACTS COMPLETED AND MERGED INTO `main`. NO PHASE 1 TASK IS CURRENTLY AUTHORIZED BEYOND MERGED M1A. M1B PENDING AND UNAUTHORIZED.**
+> **STATUS: M1A MERGED INTO `main`. M1B PROTOCOL CONTRACTS CURRENT ON `task/m1b-protocol-contracts` (OWNER GO GRANTED 2026-07-11). M1C PENDING AND UNAUTHORIZED.**
 
 ## Project lifecycle status
 
-1. **Completed** — Architecture design (BUNSO using Fable 5), Bantay review (revisions R1–R7 applied), and owner architecture decisions (D-001 … D-022).
+1. **Completed** — Architecture design (BUNSO using Fable 5), Bantay review (revisions R1–R7 applied), and owner architecture decisions (D-001 … D-023).
 2. **Completed** — Phase 0A documentation and decision prerequisites.
 3. **Completed — conditional pass** — Antigravity Phase 0B operational feasibility validation ([PHASE0B_OPERATIONAL_VALIDATION_REPORT.md](PHASE0B_OPERATIONAL_VALIDATION_REPORT.md)).
-4. **Completed** — BUNSO/Fable 5 M1A Core Contracts implementation.
-5. **Completed** — Bantay review and Codex independent verification of M1A, including the owner-directed hardening corrections (D-021 and D-022).
-6. **Completed** — Owner merge approval for M1A.
-7. **Completed** — Fast-forward merge of M1A Core Contracts into `main`.
-8. **Pending and not authorized** — M1B Protocol Contracts (requires its own explicit owner GO), then M1C … M1E one at a time, each after owner approval of the previous review.
+4. **Completed** — M1A Core Contracts: implemented, Bantay/Codex reviewed (D-021, D-022 hardening applied), owner-approved, and fast-forward merged into `main`.
+5. **Current** — **BUNSO/Fable 5 M1B Protocol Contracts** on branch `task/m1b-protocol-contracts` (owner GO granted 2026-07-11; scope per D-023).
+6. **Pending** — M1B Bantay/Codex review, then owner merge approval.
+7. **Pending and not authorized** — M1C Approval-Security Contracts, then M1D … M1E one at a time, each after owner approval of the previous review.
 
 Earlier project bootstrap and worker onboarding (Codex, BUNSO, Antigravity) are complete and precede item 1.
 
-## Current task detail — none authorized
+## Current task detail — M1B Protocol Contracts
 
-M1A Core Contracts (`packages/shared`: task states, trusted blocked context, legal transitions with evidence corroboration and stage-aware reconciliation, twelve-command grammar, worker-manifest schema, plus exhaustive unit tests) is **completed, independently verified, and merged into `main`**.
-
-**No Phase 1 task is currently authorized beyond merged M1A.** The next step, M1B Protocol Contracts, is pending and requires its own explicit owner GO.
+Under implementation on `task/m1b-protocol-contracts` (never merged before review and an explicit owner merge GO): pure versioned protocol contracts in `packages/shared/src/protocol/` — common envelopes, Client ↔ Control Plane and Control Plane ↔ Bridge message kinds, idempotency/replay classification, event cursors with stream resume, and standard protocol errors, plus exhaustive unit tests. No WebSocket, persistence, queue, authentication, grant, process-execution, or network code (D-023).
 
 Deferred owner inputs (not blockers, per D-022): the Obsidian vault path (U-7) remains configurable, and the pilot project remains uncreated and is needed only when a later runnable workflow requires it. Cloudflare account status (U-6) is needed only before Phase 2.
 
@@ -34,6 +31,8 @@ Deferred owner inputs (not blockers, per D-022): the Obsidian vault path (U-7) r
 
 M1A Core Contracts is completed, owner-approved, and merged into `main`.
 
-**M1B is pending and not authorized.** It requires its own explicit owner GO before any M1B coding begins. No Phase 1 task is currently authorized beyond merged M1A.
+**M1B is authorized and current** (owner GO 2026-07-11, scope bounded by D-023) on `task/m1b-protocol-contracts` only; merging M1B into `main` requires Bantay/Codex review and a separate explicit owner merge GO.
+
+**M1C is pending and not authorized.** It requires its own explicit owner GO before any M1C coding begins.
 
 Nothing in this file authorizes runtime orchestration, worker connection, domain or tunnel configuration, server access, MikroTik access, deployment, restart, infrastructure changes, or production actions.

@@ -14,7 +14,9 @@ Worker roles throughout (per D-005, as amended by **D-019**): **BUNSO using Fabl
 
 > **PHASE 0 STATUS: COMPLETE.** Phase 0A — completed. Phase 0B — completed with a **CONDITIONAL PASS** ([PHASE0B_OPERATIONAL_VALIDATION_REPORT.md](PHASE0B_OPERATIONAL_VALIDATION_REPORT.md)); the owner reviewed it and issued the M1A GO.
 >
-> **M1A STATUS: COMPLETED AND MERGED INTO `main`.** Implementation, Bantay review, and Codex independent verification completed; owner approval completed; fast-forward merge into `main` completed. **M1B Protocol Contracts remains pending and unauthorized**, and **no Phase 1 task is currently authorized beyond merged M1A.** Pilot-project selection and Obsidian-vault location are deferred inputs, not M1A completion blockers.
+> **M1A STATUS: COMPLETED AND MERGED INTO `main`.** Implementation, Bantay review, and Codex independent verification completed; owner approval completed; fast-forward merge into `main` completed.
+>
+> **M1B STATUS: CURRENT AND BOUNDED (D-023).** Owner GO granted 2026-07-11; in progress on `task/m1b-protocol-contracts` — pure protocol contracts only (envelopes, both directions, idempotency, event cursors, protocol errors); no runtime networking, persistence, grants, or process execution. Not merged until Bantay/Codex review and an explicit owner merge GO. **M1C remains pending and unauthorized.** Pilot-project selection and Obsidian-vault location are deferred inputs, not blockers.
 
 **Objective:** convert this design package into owner-accepted decisions and verify the PC is actually ready — without writing application code.
 

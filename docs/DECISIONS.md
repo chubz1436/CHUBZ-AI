@@ -1,6 +1,6 @@
 # Decisions
 
-> **STATUS: DECISIONS D-001 … D-022 ACCEPTED BY OWNER — M1A COMPLETED ON TASK BRANCH, IN REVIEW; MERGE PENDING**
+> **STATUS: DECISIONS D-001 … D-023 ACCEPTED BY OWNER — M1A MERGED INTO `main`; M1B IN PROGRESS ON `task/m1b-protocol-contracts`**
 
 This file is the decision log. An entry marked **ACCEPTED BY OWNER** records a decision Kenneth / CHUBZ has approved. Acceptance of a design decision does **not** by itself authorize implementation, deployment, infrastructure configuration, or production access; each implementation phase carries its own explicit owner GO.
 
@@ -167,3 +167,18 @@ Decisions D-006 … D-018 correspond to proposals P-006 … P-018 in [FINAL_ARCH
   7. Pilot-project and Obsidian-path choices are not blockers for M1A.
   8. This decision clarifies the M1A contract only and does not authorize M1B or runtime orchestration.
 - **Note:** D-021's historical text is not rewritten; this decision hardens how its trusted blocked context is delivered and evidenced.
+
+## D-023 — M1B protocol-contract scope and transport semantics
+
+- **Status:** ACCEPTED BY OWNER
+- **Decision date:** 2026-07-11
+- **Requirements:**
+  1. M1B defines pure, versioned protocol contracts only.
+  2. It covers Client ↔ Control Plane and Control Plane ↔ Local Bridge envelopes.
+  3. Mutating messages require idempotency identity and payload fingerprinting contracts.
+  4. Duplicate delivery must be distinguishable from conflicting key reuse.
+  5. Event streams use ordered cursors and support safe resume semantics.
+  6. Protocol contracts must reject unknown fields, unknown message kinds, and unsupported versions by default.
+  7. Bridge messages must use typed high-level operations, never raw shell command strings.
+  8. M1B does not implement WebSocket servers, persistence, queues, authentication, grants, process execution, or network I/O.
+  9. M1C and later phases remain unauthorized.
