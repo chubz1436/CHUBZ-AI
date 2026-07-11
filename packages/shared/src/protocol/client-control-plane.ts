@@ -14,6 +14,7 @@ import {
 } from "./common.js";
 import { ProtocolErrorSchema, parseEnvelopeWith, type EnvelopeParseResult } from "./errors.js";
 import { EventSequenceSchema, StreamCursorSchema } from "./event-cursor.js";
+import { canonicalizeMutatingEnvelopeForDigest } from "./idempotency.js";
 
 /**
  * Client ↔ Control Plane protocol contracts (M1B, D-023).
@@ -149,6 +150,33 @@ export function parseClientToControlPlaneMessage(
   raw: unknown,
 ): EnvelopeParseResult<ClientToControlPlaneMessage> {
   return parseEnvelopeWith(ClientToControlPlaneMessageSchema, CLIENT_TO_CONTROL_PLANE_KINDS, raw);
+}
+
+/**
+ * Atomic idempotency-digest canonicalization for client mutations
+ * (final R2 patch). Synchronously: validates through the REAL
+ * Client → Control Plane schema (unknown kinds, bad timestamps, wrong
+ * payloads, extra fields all rejected), confirms the message is
+ * mutating (read-only kinds and missing idempotency keys are rejected),
+ * builds the fixed semantic shape, canonicalizes it immediately, and
+ * returns ONLY the canonical string — no aliased intermediate object
+ * ever escapes, so later mutation of the caller's input cannot change
+ * an already-produced digest.
+ */
+export function canonicalizeClientMutationForDigest(input: unknown): string {
+  const parsed = parseClientToControlPlaneMessage(input);
+  if (!parsed.ok) {
+    throw new TypeError(
+      `not a valid client-to-control-plane message: ${parsed.error.code} — ${parsed.error.summary}`,
+    );
+  }
+  const message = parsed.message;
+  if (!("idempotencyKey" in message)) {
+    throw new TypeError(
+      `read-only message kind '${message.messageKind}' has no idempotency digest`,
+    );
+  }
+  return canonicalizeMutatingEnvelopeForDigest("client-to-control-plane", message);
 }
 
 // ---------------------------------------------------------------------------

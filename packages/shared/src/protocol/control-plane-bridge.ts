@@ -11,6 +11,7 @@ import {
   requireConsistentIdentity,
 } from "./common.js";
 import { parseEnvelopeWith, type EnvelopeParseResult } from "./errors.js";
+import { canonicalizeMutatingEnvelopeForDigest } from "./idempotency.js";
 
 /**
  * Control Plane ↔ Local Bridge protocol contracts (M1B, D-023; hardened
@@ -149,6 +150,31 @@ export function parseControlPlaneToBridgeMessage(
   raw: unknown,
 ): EnvelopeParseResult<ControlPlaneToBridgeMessage> {
   return parseEnvelopeWith(ControlPlaneToBridgeMessageSchema, CONTROL_PLANE_TO_BRIDGE_KINDS, raw);
+}
+
+/**
+ * Atomic idempotency-digest canonicalization for Bridge commands (final
+ * R2 patch). Synchronously: validates through the REAL
+ * Control Plane → Bridge command schema, confirms the command is
+ * mutating (bridge.ping and missing idempotency keys are rejected),
+ * builds the fixed semantic shape, canonicalizes immediately, and
+ * returns ONLY the canonical string — no aliased intermediate object
+ * ever escapes.
+ */
+export function canonicalizeBridgeCommandForDigest(input: unknown): string {
+  const parsed = parseControlPlaneToBridgeMessage(input);
+  if (!parsed.ok) {
+    throw new TypeError(
+      `not a valid control-plane-to-bridge command: ${parsed.error.code} — ${parsed.error.summary}`,
+    );
+  }
+  const message = parsed.message;
+  if (!("idempotencyKey" in message)) {
+    throw new TypeError(
+      `read-only command kind '${message.messageKind}' has no idempotency digest`,
+    );
+  }
+  return canonicalizeMutatingEnvelopeForDigest("control-plane-to-bridge", message);
 }
 
 // ---------------------------------------------------------------------------

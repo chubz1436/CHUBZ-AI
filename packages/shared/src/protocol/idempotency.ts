@@ -5,7 +5,6 @@ import {
   MessageDirectionSchema,
   ProtocolVersionSchema,
   SafeIdSchema,
-  SlugIdSchema,
   type MessageDirection,
 } from "./common.js";
 
@@ -118,35 +117,22 @@ export function classifyDelivery(
 // ---------------------------------------------------------------------------
 
 /**
- * THE one semantic digest input (R2). The future SHA-256 payload digest
- * is computed from `canonicalizeForDigest(buildSemanticDigestInput(…))`
- * and from nothing else. Delivery/retry metadata is EXCLUDED by
+ * THE semantic digest boundary (R2, atomicity hardened in the final R2
+ * patch). The future SHA-256 payload digest is computed from exactly:
+ * protocolVersion, direction, messageKind, projectId/taskId/attemptId
+ * when present, and the payload. Delivery/retry metadata is EXCLUDED by
  * construction — `messageId`, `sentAt`, `correlationId`, `causationId`,
- * and `idempotencyKey` do not exist in this shape, so two retries of
- * the same request always digest identically, and callers cannot pick
- * arbitrary envelope fields to hash.
- */
-export const SemanticDigestInputSchema = z
-  .strictObject({
-    protocolVersion: ProtocolVersionSchema,
-    direction: MessageDirectionSchema,
-    messageKind: SafeIdSchema,
-    projectId: SlugIdSchema.optional(),
-    taskId: SafeIdSchema.optional(),
-    attemptId: SafeIdSchema.optional(),
-    payload: z.unknown(),
-  })
-  .superRefine((value, ctx) => {
-    if (value.payload === undefined) {
-      ctx.addIssue({ code: "custom", path: ["payload"], message: "payload is required" });
-    }
-  });
-export type SemanticDigestInput = z.infer<typeof SemanticDigestInputSchema>;
-
-/**
- * The structural shape of an already PARSED mutating envelope (both
- * directions' mutating message variants satisfy it; read-only variants
- * lack `idempotencyKey` and are rejected at compile time and runtime).
+ * and `idempotencyKey` never enter the canonical string, so retries of
+ * the same request always digest identically.
+ *
+ * There is deliberately NO public digest-input object: the semantic
+ * shape is built and canonicalized in one synchronous step and only the
+ * canonical STRING escapes, so no aliased intermediate (whose payload a
+ * caller could mutate between build and hash) ever exists. Use the
+ * direction-specific helpers — `canonicalizeClientMutationForDigest`
+ * and `canonicalizeBridgeCommandForDigest` — which validate through the
+ * REAL direction schemas first; this low-level function only guards
+ * structure and must be fed an already schema-parsed mutating envelope.
  */
 export interface ParsedMutatingEnvelope {
   readonly protocolVersion: string;
@@ -162,29 +148,25 @@ export interface ParsedMutatingEnvelope {
   readonly payload: unknown;
 }
 
-/**
- * Builds the semantic digest input from an already parsed mutating
- * envelope. Includes protocol version, direction, message kind, the
- * semantic routing IDs, and the payload; excludes all delivery
- * metadata. Returns a NEW frozen plain object and never mutates the
- * envelope (the payload is shared by reference and is never written).
- */
-export function buildSemanticDigestInput(
+export function canonicalizeMutatingEnvelopeForDigest(
   direction: MessageDirection,
   envelope: ParsedMutatingEnvelope,
-): SemanticDigestInput {
+): string {
   if (typeof envelope !== "object" || envelope === null) {
-    throw new TypeError("buildSemanticDigestInput requires a parsed mutating envelope object");
+    throw new TypeError("digest canonicalization requires a parsed mutating envelope object");
   }
+  MessageDirectionSchema.parse(direction);
+  ProtocolVersionSchema.parse(envelope.protocolVersion);
+  SafeIdSchema.parse(envelope.messageKind);
   if (typeof envelope.idempotencyKey !== "string" || envelope.idempotencyKey === "") {
     throw new TypeError(
-      "buildSemanticDigestInput accepts only mutating envelopes (idempotencyKey is required)",
+      "digest canonicalization accepts only mutating envelopes (idempotencyKey is required)",
     );
   }
   if (!Object.hasOwn(envelope, "payload")) {
-    throw new TypeError("buildSemanticDigestInput requires an envelope with a payload");
+    throw new TypeError("digest canonicalization requires an envelope with a payload");
   }
-  const input = SemanticDigestInputSchema.parse({
+  const semantic: Record<string, unknown> = {
     protocolVersion: envelope.protocolVersion,
     direction,
     messageKind: envelope.messageKind,
@@ -192,8 +174,8 @@ export function buildSemanticDigestInput(
     ...(envelope.taskId !== undefined ? { taskId: envelope.taskId } : {}),
     ...(envelope.attemptId !== undefined ? { attemptId: envelope.attemptId } : {}),
     payload: envelope.payload,
-  });
-  return Object.freeze(input);
+  };
+  return canonicalizeForDigest(semantic);
 }
 
 // ---------------------------------------------------------------------------
@@ -256,14 +238,59 @@ function canonicalize(value: unknown, depth: number, seen: Set<object>): string 
   seen.add(objectValue);
   try {
     if (Array.isArray(objectValue)) {
-      const parts: string[] = [];
-      for (let index = 0; index < objectValue.length; index += 1) {
-        if (!Object.hasOwn(objectValue, index)) {
+      // Strict arrays (final R2 patch): exactly Array.prototype, and the
+      // ONLY own keys are `length` plus dense data-property indexes
+      // 0..length-1. Descriptors are inspected without ever executing a
+      // getter; anything exotic is rejected, never silently skipped.
+      if (Object.getPrototypeOf(objectValue) !== Array.prototype) {
+        throw new TypeError(
+          "canonicalizeForDigest: array subclasses and custom prototypes are not JSON-representable",
+        );
+      }
+      const arrayValue = objectValue as unknown[];
+      let indexCount = 0;
+      for (const key of Reflect.ownKeys(arrayValue)) {
+        if (typeof key === "symbol") {
           throw new TypeError(
-            "canonicalizeForDigest: sparse arrays are not JSON-representable",
+            "canonicalizeForDigest: symbol-keyed array properties are not JSON-representable",
           );
         }
-        parts.push(canonicalize((objectValue as unknown[])[index], depth + 1, seen));
+        if (key === "length") continue;
+        const index = Number(key);
+        if (
+          !Number.isInteger(index) ||
+          index < 0 ||
+          index >= arrayValue.length ||
+          String(index) !== key
+        ) {
+          throw new TypeError(
+            "canonicalizeForDigest: arrays with extra properties are not JSON-representable",
+          );
+        }
+        const descriptor = Object.getOwnPropertyDescriptor(arrayValue, key);
+        if (descriptor === undefined) {
+          throw new TypeError("canonicalizeForDigest: array index descriptor is missing");
+        }
+        if (descriptor.get !== undefined || descriptor.set !== undefined) {
+          throw new TypeError(
+            "canonicalizeForDigest: accessor array elements are not JSON-representable",
+          );
+        }
+        if (descriptor.enumerable !== true) {
+          throw new TypeError(
+            "canonicalizeForDigest: non-enumerable array indexes are not JSON-representable",
+          );
+        }
+        indexCount += 1;
+      }
+      if (indexCount !== arrayValue.length) {
+        throw new TypeError("canonicalizeForDigest: sparse arrays are not JSON-representable");
+      }
+      const parts: string[] = [];
+      for (let index = 0; index < arrayValue.length; index += 1) {
+        // Safe: every index was verified above to be a plain enumerable
+        // data property, so this read cannot execute a getter.
+        parts.push(canonicalize(arrayValue[index], depth + 1, seen));
       }
       return `[${parts.join(",")}]`;
     }

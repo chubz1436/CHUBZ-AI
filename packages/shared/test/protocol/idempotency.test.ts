@@ -4,14 +4,13 @@ import {
   PayloadDigestSchema,
   RecordedIdempotencySchema,
   REPLAY_CLASSIFICATIONS,
-  SemanticDigestInputSchema,
-  buildSemanticDigestInput,
+  canonicalizeBridgeCommandForDigest,
+  canonicalizeClientMutationForDigest,
   canonicalizeForDigest,
   classifyDelivery,
   scopeKey,
   type IdempotencyScope,
   type IncomingDelivery,
-  type ParsedMutatingEnvelope,
   type RecordedIdempotency,
 } from "../../src/index.js";
 
@@ -130,116 +129,143 @@ describe("scope keys", () => {
   });
 });
 
-describe("semantic digest boundary (R2)", () => {
-  const envelope = (overrides: Partial<ParsedMutatingEnvelope> = {}): ParsedMutatingEnvelope => ({
+describe("atomic semantic digest helpers (final R2 patch)", () => {
+  interface ChatPayload {
+    input: { kind: string; text: string };
+    projectId: string;
+  }
+  const rawChatSubmit = (
+    extra: Record<string, unknown> = {},
+    text = "please fix the login timeout",
+  ) => ({
     protocolVersion: "1.0",
     messageId: "msg-100",
-    messageKind: "task.cancel",
+    messageKind: "chat.submit",
     sentAt: "2026-07-11T09:00:00Z",
     idempotencyKey: "client-key-0001",
-    projectId: "pilot-project",
     taskId: "task-42",
-    attemptId: "attempt-1",
-    payload: { taskId: "task-42", attemptId: "attempt-1" },
-    ...overrides,
+    payload: {
+      input: { kind: "natural-language", text },
+      projectId: "pilot-project",
+    },
+    ...extra,
   });
 
-  const semantic = (direction: Parameters<typeof buildSemanticDigestInput>[0], e: ParsedMutatingEnvelope) =>
-    canonicalizeForDigest(buildSemanticDigestInput(direction, e));
+  const rawDispatch = () => ({
+    protocolVersion: "1.0",
+    messageId: "cmd-200",
+    messageKind: "worker.dispatch",
+    sentAt: "2026-07-11T10:00:00Z",
+    idempotencyKey: "bridge-cmd-key-01",
+    payload: {
+      projectId: "pilot-project",
+      taskId: "task-42",
+      attemptId: "attempt-1",
+      operationId: "op-disp-1",
+      workspaceId: "ws-task-42-a1",
+      worker: { manifestId: "codex", manifestVersion: "1.0.0" },
+      prompt: { text: "Fix the login timeout.", contextArtifactIds: [] },
+    },
+  });
 
-  it("delivery metadata never changes the semantic canonical string", () => {
-    const baseline = semantic("client-to-control-plane", envelope());
-    expect(semantic("client-to-control-plane", envelope({ messageId: "msg-999" }))).toBe(baseline);
-    expect(
-      semantic("client-to-control-plane", envelope({ sentAt: "2027-01-01T00:00:00Z" })),
-    ).toBe(baseline);
-    expect(
-      semantic("client-to-control-plane", envelope({ correlationId: "corr-77" })),
-    ).toBe(baseline);
-    expect(semantic("client-to-control-plane", envelope({ causationId: "cause-77" }))).toBe(
+  it("returns a canonical string, never a shared digest-input object", () => {
+    const digest = canonicalizeClientMutationForDigest(rawChatSubmit());
+    expect(typeof digest).toBe("string");
+    expect(digest).toContain('"direction":"client-to-control-plane"');
+    const bridgeDigest = canonicalizeBridgeCommandForDigest(rawDispatch());
+    expect(typeof bridgeDigest).toBe("string");
+    expect(bridgeDigest).toContain('"direction":"control-plane-to-bridge"');
+  });
+
+  it("delivery-only differences produce identical canonical strings", () => {
+    const baseline = canonicalizeClientMutationForDigest(rawChatSubmit());
+    expect(canonicalizeClientMutationForDigest(rawChatSubmit({ messageId: "msg-999" }))).toBe(
       baseline,
     );
     expect(
-      semantic("client-to-control-plane", envelope({ idempotencyKey: "retry-key-9999" })),
+      canonicalizeClientMutationForDigest(rawChatSubmit({ sentAt: "2027-01-01T00:00:00Z" })),
+    ).toBe(baseline);
+    expect(
+      canonicalizeClientMutationForDigest(rawChatSubmit({ correlationId: "corr-77" })),
+    ).toBe(baseline);
+    expect(
+      canonicalizeClientMutationForDigest(rawChatSubmit({ causationId: "cause-77" })),
+    ).toBe(baseline);
+    expect(
+      canonicalizeClientMutationForDigest(rawChatSubmit({ idempotencyKey: "retry-key-9999" })),
     ).toBe(baseline);
   });
 
-  it("semantic fields change the canonical string", () => {
-    const baseline = semantic("client-to-control-plane", envelope());
-    expect(semantic("control-plane-to-bridge", envelope())).not.toBe(baseline);
-    expect(
-      semantic("client-to-control-plane", envelope({ messageKind: "approval.decide" })),
-    ).not.toBe(baseline);
-    expect(
-      semantic("client-to-control-plane", envelope({ projectId: "other-project" })),
-    ).not.toBe(baseline);
-    expect(semantic("client-to-control-plane", envelope({ taskId: "task-99" }))).not.toBe(
-      baseline,
-    );
-    expect(semantic("client-to-control-plane", envelope({ attemptId: "attempt-9" }))).not.toBe(
+  it("semantic differences produce different canonical strings", () => {
+    const baseline = canonicalizeClientMutationForDigest(rawChatSubmit());
+    expect(canonicalizeClientMutationForDigest(rawChatSubmit({ taskId: "task-99" }))).not.toBe(
       baseline,
     );
     expect(
-      semantic(
-        "client-to-control-plane",
-        envelope({ payload: { taskId: "task-42", attemptId: "attempt-2" } }),
-      ),
+      canonicalizeClientMutationForDigest(rawChatSubmit({ attemptId: "attempt-9" })),
     ).not.toBe(baseline);
+    expect(
+      canonicalizeClientMutationForDigest(rawChatSubmit({}, "a different request")),
+    ).not.toBe(baseline);
+    const cancel = canonicalizeClientMutationForDigest({
+      protocolVersion: "1.0",
+      messageId: "msg-100",
+      messageKind: "task.cancel",
+      sentAt: "2026-07-11T09:00:00Z",
+      idempotencyKey: "client-key-0001",
+      payload: { taskId: "task-42", attemptId: "attempt-1" },
+    });
+    expect(cancel).not.toBe(baseline);
   });
 
-  it("the digest input contains exactly the semantic fields", () => {
-    const input = buildSemanticDigestInput("client-to-control-plane", envelope());
-    expect(Object.keys(input).sort()).toEqual([
-      "attemptId",
-      "direction",
-      "messageKind",
-      "payload",
-      "projectId",
-      "protocolVersion",
-      "taskId",
-    ]);
-    expect(Object.isFrozen(input)).toBe(true);
+  it("a previously produced digest cannot change when the input is mutated afterwards (no aliasing)", () => {
+    const raw = rawChatSubmit();
+    const digestBefore = canonicalizeClientMutationForDigest(raw);
+    const saved = `${digestBefore}`;
+    (raw.payload as ChatPayload).input.text = "maliciously changed after digest";
+    expect(digestBefore).toBe(saved);
+    expect(canonicalizeClientMutationForDigest(raw)).not.toBe(digestBefore);
   });
 
-  it("the envelope is never mutated and the result is a new object", () => {
-    const original = envelope();
-    const snapshot = JSON.parse(JSON.stringify(original)) as unknown;
-    const input = buildSemanticDigestInput("client-to-control-plane", original);
-    expect(input).not.toBe(original as unknown);
-    expect(original).toEqual(snapshot);
-    expect(Object.isFrozen(original)).toBe(false);
-  });
-
-  it("only mutating envelopes are accepted", () => {
-    const { idempotencyKey: _omit, ...readonlyEnvelope } = envelope();
+  it("validates through the REAL client schema — structural lookalikes are rejected", () => {
     expect(() =>
-      buildSemanticDigestInput(
-        "client-to-control-plane",
-        readonlyEnvelope as unknown as ParsedMutatingEnvelope,
-      ),
+      canonicalizeClientMutationForDigest(rawChatSubmit({ messageKind: "made.up" })),
     ).toThrow(TypeError);
     expect(() =>
-      buildSemanticDigestInput("client-to-control-plane", null as unknown as ParsedMutatingEnvelope),
+      canonicalizeClientMutationForDigest(rawChatSubmit({ sentAt: "yesterday" })),
     ).toThrow(TypeError);
+    expect(() =>
+      canonicalizeClientMutationForDigest(rawChatSubmit({ payload: { wrong: true } })),
+    ).toThrow(TypeError);
+    expect(() =>
+      canonicalizeClientMutationForDigest(rawChatSubmit({ smuggled: "field" })),
+    ).toThrow(TypeError);
+    const { idempotencyKey: _omit, ...missingKey } = rawChatSubmit();
+    expect(() => canonicalizeClientMutationForDigest(missingKey)).toThrow(TypeError);
+    const readOnly = {
+      protocolVersion: "1.0",
+      messageId: "msg-100",
+      messageKind: "task.get",
+      sentAt: "2026-07-11T09:00:00Z",
+      payload: { taskId: "task-42" },
+    };
+    expect(() => canonicalizeClientMutationForDigest(readOnly)).toThrow(TypeError);
   });
 
-  it("callers cannot smuggle extra fields into the digest input", () => {
-    expect(
-      SemanticDigestInputSchema.safeParse({
-        protocolVersion: "1.0",
-        direction: "client-to-control-plane",
-        messageKind: "task.cancel",
-        payload: {},
-        messageId: "msg-100",
-      }).success,
-    ).toBe(false);
-    expect(
-      SemanticDigestInputSchema.safeParse({
-        protocolVersion: "1.0",
-        direction: "client-to-control-plane",
-        messageKind: "task.cancel",
-      }).success,
-    ).toBe(false);
+  it("the bridge helper validates through the REAL bridge command schema", () => {
+    expect(typeof canonicalizeBridgeCommandForDigest(rawDispatch())).toBe("string");
+    const ping = {
+      protocolVersion: "1.0",
+      messageId: "cmd-201",
+      messageKind: "bridge.ping",
+      sentAt: "2026-07-11T10:00:00Z",
+      payload: {},
+    };
+    expect(() => canonicalizeBridgeCommandForDigest(ping)).toThrow(TypeError);
+    expect(() => canonicalizeBridgeCommandForDigest(rawChatSubmit())).toThrow(TypeError);
+    const withShell = rawDispatch();
+    (withShell.payload as Record<string, unknown>)["shellCommand"] = "rm -rf /";
+    expect(() => canonicalizeBridgeCommandForDigest(withShell)).toThrow(TypeError);
   });
 });
 
@@ -328,6 +354,69 @@ describe("strict canonicalization (R2)", () => {
     expect(() => canonicalizeForDigest({ n: Number.NaN })).toThrow(TypeError);
     expect(() => canonicalizeForDigest(Number.POSITIVE_INFINITY)).toThrow(TypeError);
     expect(() => canonicalizeForDigest({ n: Number.NEGATIVE_INFINITY })).toThrow(TypeError);
+  });
+
+  it("rejects arrays with extra enumerable properties", () => {
+    const arr: number[] & { extra?: number } = [1, 2];
+    arr.extra = 3;
+    expect(() => canonicalizeForDigest(arr)).toThrow(TypeError);
+  });
+
+  it("rejects arrays with symbol properties", () => {
+    const arr: unknown[] = [1, 2];
+    (arr as unknown as Record<PropertyKey, unknown>)[Symbol("hidden")] = "x";
+    expect(() => canonicalizeForDigest(arr)).toThrow(TypeError);
+  });
+
+  it("rejects arrays with non-enumerable custom properties", () => {
+    const arr = [1, 2];
+    Object.defineProperty(arr, "hidden", { enumerable: false, value: 9 });
+    expect(() => canonicalizeForDigest(arr)).toThrow(TypeError);
+  });
+
+  it("rejects index getters WITHOUT executing them", () => {
+    let executed = false;
+    const arr = [1, 2];
+    Object.defineProperty(arr, 1, {
+      enumerable: true,
+      configurable: true,
+      get: () => {
+        executed = true;
+        return 2;
+      },
+    });
+    expect(() => canonicalizeForDigest(arr)).toThrow(TypeError);
+    expect(executed).toBe(false);
+  });
+
+  it("rejects extra-property getters WITHOUT executing them", () => {
+    let executed = false;
+    const arr = [1, 2];
+    Object.defineProperty(arr, "extra", {
+      enumerable: true,
+      configurable: true,
+      get: () => {
+        executed = true;
+        return "evil";
+      },
+    });
+    expect(() => canonicalizeForDigest(arr)).toThrow(TypeError);
+    expect(executed).toBe(false);
+  });
+
+  it("rejects arrays with custom prototypes and Array subclasses", () => {
+    const detached = [1, 2];
+    Object.setPrototypeOf(detached, null);
+    expect(() => canonicalizeForDigest(detached)).toThrow(TypeError);
+    class FancyArray extends Array<number> {}
+    const fancy = FancyArray.from([1, 2]);
+    expect(() => canonicalizeForDigest(fancy)).toThrow(TypeError);
+  });
+
+  it("normal dense arrays still canonicalize deterministically", () => {
+    expect(canonicalizeForDigest([1, "two", { b: 2, a: 1 }, [true, null]])).toBe(
+      '[1,"two",{"a":1,"b":2},[true,null]]',
+    );
   });
 
   it("enforces the canonical depth limit", () => {
