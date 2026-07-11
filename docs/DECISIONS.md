@@ -1,6 +1,6 @@
 # Decisions
 
-> **STATUS: DECISIONS D-001 … D-021 ACCEPTED BY OWNER — M1A COMPLETED ON TASK BRANCH, IN REVIEW; MERGE PENDING**
+> **STATUS: DECISIONS D-001 … D-022 ACCEPTED BY OWNER — M1A COMPLETED ON TASK BRANCH, IN REVIEW; MERGE PENDING**
 
 This file is the decision log. An entry marked **ACCEPTED BY OWNER** records a decision Kenneth / CHUBZ has approved. Acceptance of a design decision does **not** by itself authorize implementation, deployment, infrastructure configuration, or production access; each implementation phase carries its own explicit owner GO.
 
@@ -152,3 +152,18 @@ Decisions D-006 … D-018 correspond to proposals P-006 … P-018 in [FINAL_ARCH
   8. Ordinary BLOCKED recovery and execution-unknown reconciliation are separate paths.
   9. This clarification changes only the M1A contract and does not authorize runtime orchestration.
 - **Note:** D-020's historical text is not rewritten; this decision refines its reconciliation model to be stage-aware.
+
+## D-022 — Trusted task snapshot and reconciliation evidence
+
+- **Status:** ACCEPTED BY OWNER
+- **Decision date:** 2026-07-10
+- **Requirements:**
+  1. Transition authorization must receive the existing task state and BLOCKED context through a **separate trusted-current-snapshot input**, distinct from the transition request.
+  2. A transition request must not be allowed to supply or replace the current BLOCKED reason, source state, operation, attempt ID, operation ID, or journal reference.
+  3. The future state store is responsible for loading the trusted snapshot; M1A defines and validates its contract without implementing persistence.
+  4. Every new-attempt transition requires both the trusted current attempt ID and a distinct proposed next attempt ID.
+  5. Reconciliation to FAILED requires stage-specific trusted Bridge result or failure evidence in addition to owner reconciliation.
+  6. Automated connectors, including browser-controlled connectors, require automated provenance. Owner-attested provenance is reserved for manual relay/import workflows.
+  7. Pilot-project and Obsidian-path choices are not blockers for M1A.
+  8. This decision clarifies the M1A contract only and does not authorize M1B or runtime orchestration.
+- **Note:** D-021's historical text is not rewritten; this decision hardens how its trusted blocked context is delivered and evidenced.

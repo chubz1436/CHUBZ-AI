@@ -260,6 +260,53 @@ describe("contradictory declarations", () => {
   });
 });
 
+/** Small test fixture: a plausible future browser-controlled worker. */
+const browserWorker = (): Record<string, unknown> => ({
+  ...cliWorker(),
+  workerId: "browser-agent",
+  displayName: "Browser Agent",
+  runtime: "browser-automation",
+  connector: {
+    type: "browser-controlled",
+    healthCheck: "none",
+    timeoutPolicy: { timeoutSec: 1200, killGraceSec: 10 },
+    cancelable: true,
+  },
+  capabilities: ["review", "text-output"],
+  restrictions: ["never-write"],
+  supportedFileOps: ["read"],
+});
+
+describe("automated connector provenance (D-022)", () => {
+  it("accepts browser-controlled with automated provenance", () => {
+    expect(validateWorkerManifest(browserWorker()).valid).toBe(true);
+  });
+
+  it.each(["cli-headless", "local-process", "http-api", "browser-controlled"])(
+    "rejects '%s' with owner-attested provenance",
+    (type) => {
+      const candidate =
+        type === "browser-controlled"
+          ? browserWorker()
+          : type === "http-api"
+            ? apiWorker()
+            : type === "local-process"
+              ? localProcessWorker()
+              : cliWorker();
+      candidate.provenanceMode = "owner-attested";
+      const result = validateWorkerManifest(candidate);
+      expect(result.valid).toBe(false);
+      if (!result.valid) {
+        expect(result.issues.some((i) => i.path === "provenanceMode")).toBe(true);
+      }
+    },
+  );
+
+  it("manual relay remains the only owner-attested connector", () => {
+    expect(validateWorkerManifest(manualWorker()).valid).toBe(true);
+  });
+});
+
 describe("cross-field hardening (correction 7)", () => {
   it("rejects an API worker claiming owner-attested manual provenance", () => {
     const candidate = apiWorker();

@@ -29,7 +29,7 @@ Completed 2026-07-10:
 
 ### Phase 0B — Operational feasibility validation — `COMPLETED — CONDITIONAL PASS (2026-07-10)`
 
-Assigned to **Antigravity**. Read-only and trivially reversible checks only; nothing here has been performed yet.
+Performed by **Antigravity** (read-only and trivially reversible checks), completed 2026-07-10 with a **conditional pass** — see [PHASE0B_OPERATIONAL_VALIDATION_REPORT.md](PHASE0B_OPERATIONAL_VALIDATION_REPORT.md). The validated scope was:
 
 - Windows environment assessment on the owner's actual PC.
 - Confirm **Node.js LTS**, **pnpm**, and **Git** availability or installability (A-5).
@@ -38,7 +38,7 @@ Assigned to **Antigravity**. Read-only and trivially reversible checks only; not
 - Verify **process-management assumptions**: spawn, timeout, and reliable process-tree termination on Windows.
 - Assess **connector feasibility** per worker and report exact working command lines for the worker manifests' draft `invocation` fields.
 
-**Owner still to provide:** Obsidian vault path (U-7), the pilot project choice, confirmation the pilot project is (or may become) a Git repository (A-2), Cloudflare account status (U-6 — needed only before Phase 2).
+**Owner inputs (not blockers — D-022):** the pilot project remains uncreated and is needed only when a later runnable workflow requires it; the Obsidian vault path (U-7) remains configurable and is not a blocker for M1A. Cloudflare account status (U-6) is needed only before Phase 2.
 
 **Excluded scope:** any application code, package manifests, dependency installation into the project, framework initialization, domain/tunnel configuration.
 
@@ -46,12 +46,12 @@ Assigned to **Antigravity**. Read-only and trivially reversible checks only; not
 
 **Assigned workers:** BUNSO (design + decision recording — done, Phase 0A), Bantay (review — done, Phase 0A), Owner (decisions and Phase 0B report review — done), Antigravity (Phase 0B validation — done, conditional pass).
 
-**Acceptance criteria (Phase 0 as a whole):** Phase 0A decisions resolved (**done**) **and** Phase 0B executed with U-1/U-2 answered — even if the answer is "not workable — start manual-relay-only" — environment and process-management assumptions verified, pilot project and vault path named, **and the owner has reviewed the Phase 0B validation report.**
+**Acceptance criteria (Phase 0 as a whole): SATISFIED** — Phase 0A decisions resolved (**done**), Phase 0B executed with U-1/U-2 answered and environment/process-management assumptions verified (**done, conditional pass**), and the owner reviewed the Phase 0B validation report (**done**). Pilot-project and Obsidian-path choices are explicitly *not* completion requirements (D-022); they are deferred owner inputs for later runnable workflows.
 
 **Tests:** none (no code).
 **Risks:** design churn delaying start → time-box review to one round plus one revision. Phase 0B may invalidate connector assumptions (U-1/U-2); that is its purpose, and manual relay absorbs the outcome.
 **Rollback:** none needed — documents only.
-**STOP POINT:** no Phase 1 work — including M1A — until Phase 0B passes, the owner reviews its report, and the owner records an explicit GO for Phase 1.
+**STOP POINT (satisfied for M1A):** the owner recorded the explicit M1A GO after reviewing the Phase 0B report. M1A is completed on `task/m1a-core-contracts`; its review/final correction is current; merge approval is pending; **M1B remains pending and unauthorized** with its own GO required.
 
 ---
 

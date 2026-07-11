@@ -11,26 +11,27 @@ import {
 
 /**
  * Legal-transition model for the accepted state machine
- * (docs/FINAL_ARCHITECTURE_DESIGN.md §10; D-017, clarified by D-020 and
- * D-021).
+ * (docs/FINAL_ARCHITECTURE_DESIGN.md §10; D-017, clarified by D-020,
+ * D-021, and D-022).
+ *
+ * TRUST BOUNDARY (D-022): authorization takes TWO separate inputs —
+ * `current`, the trusted snapshot of the task loaded by the future
+ * state store (visible state, attempt identity, stored BLOCKED
+ * context), and `request`, the proposed transition. The request shape
+ * has NO field capable of supplying or replacing the current blocked
+ * reason, source state, operation, attempt ID, operation ID, or journal
+ * reference — substitution is structurally impossible, not merely
+ * validated away. This pure library trusts that the Control Plane
+ * loaded `current` from its store; persistence itself is not M1A.
  *
  * AUTHORITY MODEL: the Control Plane records state and is the actor for
  * system transitions; Bridge-origin facts are mandatory typed EVIDENCE,
  * never an alternative actor.
- *
- * TRUSTED BLOCKED CONTEXT (D-021): BLOCKED preserves what was blocked —
- * the source state, the operation in flight, the reason, and the attempt
- * and operation identities. Entering BLOCKED requires a proposed context
- * that matches the actual source state; leaving BLOCKED requires the
- * stored trusted context. Recovery targets are DERIVED from the blocked
- * operation, never freely chosen, and execution-unknown can only be
- * resolved through stage-aware owner reconciliation. This contract is
- * pure: it validates the context supplied by the future trusted state
- * store; it does not persist anything itself.
  */
 
 export const TRANSITION_EVIDENCE = Object.freeze([
   "bridge-dispatch-ack",
+  "bridge-dispatch-failure-report",
   "bridge-execution-report",
   "bridge-integration-report",
   "grant-verified",
@@ -59,11 +60,9 @@ export const BlockedOperationSchema = z.enum(BLOCKED_OPERATIONS);
 export type BlockedOperation = z.infer<typeof BlockedOperationSchema>;
 
 /**
- * Trusted blocked context (D-021). Written by the state store when a task
- * enters BLOCKED; supplied back verbatim when it leaves. A caller cannot
- * substitute pieces: the whole structure is cross-checked against the
- * source/operation/reason matrix, so e.g. a worker-execution context
- * relabeled "queue-lock" is rejected outright.
+ * Trusted blocked context (D-021/D-022). Written by the state store when
+ * a task enters BLOCKED; supplied back only inside the trusted current
+ * snapshot when it leaves.
  */
 export const BlockedContextSchema = z
   .strictObject({
@@ -86,23 +85,62 @@ export const BlockedContextSchema = z
   .readonly();
 export type BlockedContext = z.infer<typeof BlockedContextSchema>;
 
+/**
+ * The trusted current snapshot, loaded from the operational state store
+ * — never assembled from a caller's transition request (D-022).
+ */
+export const TrustedCurrentSnapshotSchema = z
+  .strictObject({
+    /** Current visible task state. */
+    state: TaskStateSchema,
+    /** Current attempt identity, as recorded by the store. */
+    attemptId: z.string().min(1).optional(),
+    /** The stored BLOCKED context; required iff state is BLOCKED. */
+    blockedContext: BlockedContextSchema.optional(),
+  })
+  .readonly();
+export type TrustedCurrentSnapshot = z.infer<typeof TrustedCurrentSnapshotSchema>;
+
+/**
+ * The transition request. Deliberately has NO current-state fields:
+ * nothing here can override the trusted snapshot.
+ */
+export const TransitionRequestSchema = z
+  .strictObject({
+    to: TaskStateSchema,
+    actor: ActorCategorySchema,
+    /** Allowed only when `to` is BLOCKED: what is being blocked. */
+    proposedBlockedContext: BlockedContextSchema.optional(),
+    /** Typed facts accompanying the transition (superfluous facts tolerated). */
+    evidence: z.array(TransitionEvidenceSchema).readonly().optional(),
+    /** Required iff resolving BLOCKED(execution-unknown). */
+    reconciliationOutcome: ReconciliationOutcomeSchema.optional(),
+    /** Proposed NEW attempt identity where a fresh attempt is required. */
+    nextAttemptId: z.string().min(1).optional(),
+    /** Proposed NEW operation identity where a fresh operation is required. */
+    nextOperationId: z.string().min(1).optional(),
+  })
+  .readonly();
+export type TransitionRequest = z.infer<typeof TransitionRequestSchema>;
+
+export const CanTransitionInputSchema = z
+  .strictObject({
+    current: TrustedCurrentSnapshotSchema,
+    request: TransitionRequestSchema,
+  })
+  .readonly();
+export type CanTransitionInput = z.infer<typeof CanTransitionInputSchema>;
+
 interface BlockedOperationProfile {
-  /** The only source state this operation can block from. */
   readonly from: TaskState;
-  /** Ordinary (non-execution-unknown) reasons this operation may carry. */
   readonly ordinaryReasons: readonly BlockedReason[];
-  /** Whether execution-unknown is meaningful for this operation. */
   readonly executionUnknownAllowed: boolean;
-  /**
-   * Derived ordinary-recovery target. Absent = no ordinary recovery
-   * exists for this operation (uncertainty must reconcile instead).
-   */
   readonly ordinaryRecoveryTarget?: TaskState;
 }
 
 /**
- * Source / operation / reason compatibility matrix (D-021 correction 2).
- * Recovery returns only to a target valid for the original blocked stage.
+ * Source / operation / reason compatibility matrix (D-021). Recovery
+ * returns only to a target valid for the original blocked stage.
  */
 export const BLOCKED_OPERATION_MATRIX: Readonly<Record<BlockedOperation, BlockedOperationProfile>> =
   Object.freeze({
@@ -137,21 +175,18 @@ export const BLOCKED_OPERATION_MATRIX: Readonly<Record<BlockedOperation, Blocked
   });
 
 interface ReconciliationProfile {
-  /** The only legal target for this operation + outcome. */
   readonly target: TaskState;
   readonly requiredEvidence: readonly TransitionEvidence[];
-  /** A NEW operation identity (differing from the blocked one) is required. */
   readonly requiresNewOperationId?: boolean;
-  /** A NEW attempt identity (differing from the blocked one) is required. */
   readonly requiresNewAttemptId?: boolean;
 }
 
 /**
- * Stage-aware reconciliation matrix (D-021 correction 3). A
- * reconciliation outcome is the outcome of the ORIGINAL OPERATION, not
- * automatically of the whole task: a dispatch that "confirmed-completed"
- * means the worker is RUNNING — nothing more. context-preparation has no
- * entry because execution-unknown is impossible there.
+ * Stage-aware reconciliation matrix (D-021/D-022). An outcome resolves
+ * the ORIGINAL OPERATION, not automatically the whole task. Every
+ * confirmed-failed path requires stage-specific trusted Bridge evidence
+ * in addition to owner reconciliation (D-022) — owner reconciliation
+ * alone never marks work failed.
  */
 export const RECONCILIATION_MATRIX: Readonly<
   Partial<Record<BlockedOperation, Readonly<Record<ReconciliationOutcome, ReconciliationProfile>>>>
@@ -163,7 +198,10 @@ export const RECONCILIATION_MATRIX: Readonly<
     }),
     "confirmed-failed": Object.freeze({
       target: "FAILED",
-      requiredEvidence: Object.freeze(["owner-reconciliation"] as const),
+      requiredEvidence: Object.freeze([
+        "owner-reconciliation",
+        "bridge-dispatch-failure-report",
+      ] as const),
     }),
     "confirmed-not-executed": Object.freeze({
       target: "AWAITING_DISPATCH",
@@ -178,7 +216,7 @@ export const RECONCILIATION_MATRIX: Readonly<
     }),
     "confirmed-failed": Object.freeze({
       target: "FAILED",
-      requiredEvidence: Object.freeze(["owner-reconciliation"] as const),
+      requiredEvidence: Object.freeze(["owner-reconciliation", "bridge-execution-report"] as const),
     }),
     "confirmed-not-executed": Object.freeze({
       target: "CONTEXT_PREPARING",
@@ -198,7 +236,11 @@ export const RECONCILIATION_MATRIX: Readonly<
     }),
     "confirmed-failed": Object.freeze({
       target: "FAILED",
-      requiredEvidence: Object.freeze(["owner-reconciliation"] as const),
+      requiredEvidence: Object.freeze([
+        "owner-reconciliation",
+        "bridge-integration-report",
+        "grant-verified",
+      ] as const),
     }),
     "confirmed-not-executed": Object.freeze({
       target: "APPROVED",
@@ -246,24 +288,20 @@ const rule = (
 
 /**
  * Non-BLOCKED-origin transitions plus entries INTO BLOCKED. Transitions
- * OUT of BLOCKED are not free-form rules: they are derived from the
- * trusted blocked context via the two matrices above.
+ * OUT of BLOCKED derive from the trusted blocked context via the
+ * matrices above.
  */
 export const TRANSITION_RULES: readonly TransitionRule[] = Object.freeze([
-  // Draft
   rule("DRAFT", "CONTEXT_PREPARING", ["owner"]),
   rule("DRAFT", "CANCELLED", ["owner"]),
-  // Context preparation
   rule("CONTEXT_PREPARING", "AWAITING_DISPATCH", ["control-plane"]),
   rule("CONTEXT_PREPARING", "BLOCKED", ["control-plane"]),
   rule("CONTEXT_PREPARING", "CANCELLED", ["owner"], { source: "d-020-clarification" }),
-  // Dispatch queue
   rule("AWAITING_DISPATCH", "RUNNING", ["control-plane"], {
     requiredEvidence: ["bridge-dispatch-ack"],
   }),
   rule("AWAITING_DISPATCH", "BLOCKED", ["control-plane", "system-recovery"]),
   rule("AWAITING_DISPATCH", "CANCELLING", ["owner"], { source: "d-020-clarification" }),
-  // Running
   rule("RUNNING", "RESULT_CAPTURED", ["control-plane"], {
     requiredEvidence: ["bridge-execution-report"],
   }),
@@ -272,18 +310,14 @@ export const TRANSITION_RULES: readonly TransitionRule[] = Object.freeze([
   }),
   rule("RUNNING", "CANCELLING", ["owner"]),
   rule("RUNNING", "BLOCKED", ["system-recovery"], { source: "d-020-clarification" }),
-  // Captured result
   rule("RESULT_CAPTURED", "AWAITING_APPROVAL", ["control-plane"]),
   rule("RESULT_CAPTURED", "CANCELLED", ["owner"], { source: "d-020-clarification" }),
-  // Owner gate
   rule("AWAITING_APPROVAL", "APPROVED", ["owner"], { requiresOwnerApproval: true }),
   rule("AWAITING_APPROVAL", "REJECTED", ["owner"]),
   rule("AWAITING_APPROVAL", "REVISION_REQUESTED", ["owner"]),
   rule("AWAITING_APPROVAL", "CANCELLED", ["owner"], { source: "d-020-clarification" }),
-  // Revision
   rule("REVISION_REQUESTED", "CONTEXT_PREPARING", ["owner"], { requiresNewAttemptId: true }),
   rule("REVISION_REQUESTED", "CANCELLED", ["owner"], { source: "d-020-clarification" }),
-  // Approved / integration
   rule("APPROVED", "COMPLETED", ["control-plane"], {
     requiredEvidence: ["bridge-integration-report", "grant-verified"],
   }),
@@ -292,11 +326,9 @@ export const TRANSITION_RULES: readonly TransitionRule[] = Object.freeze([
   }),
   rule("APPROVED", "BLOCKED", ["system-recovery"], { source: "d-020-clarification" }),
   rule("APPROVED", "CANCELLING", ["owner"], { source: "d-020-clarification" }),
-  // Cancellation confirmation
   rule("CANCELLING", "CANCELLED", ["control-plane"], {
     requiredEvidence: ["bridge-kill-confirmation"],
   }),
-  // Failure retry
   rule("FAILED", "CONTEXT_PREPARING", ["owner"], { requiresNewAttemptId: true }),
 ]);
 
@@ -311,6 +343,7 @@ export const DENY_CODES = Object.freeze([
   "OPERATION_SOURCE_MISMATCH",
   "REASON_OPERATION_MISMATCH",
   "JOURNAL_REF_REQUIRED",
+  "ATTEMPT_ID_MISMATCH",
   "RECONCILIATION_REQUIRED",
   "RECONCILIATION_NOT_APPLICABLE",
   "INVALID_RECONCILIATION_OUTCOME",
@@ -318,35 +351,13 @@ export const DENY_CODES = Object.freeze([
   "RECONCILIATION_EVIDENCE_REQUIRED",
   "INVALID_RECOVERY_TARGET",
   "MISSING_REQUIRED_EVIDENCE",
-  "NEW_ATTEMPT_ID_REQUIRED",
+  "CURRENT_ATTEMPT_ID_REQUIRED",
+  "NEXT_ATTEMPT_ID_REQUIRED",
   "ATTEMPT_ID_REUSED",
   "NEW_OPERATION_ID_REQUIRED",
   "OPERATION_ID_REUSED",
 ] as const);
 export type DenyCode = (typeof DENY_CODES)[number];
-
-export const CanTransitionInputSchema = z
-  .strictObject({
-    from: TaskStateSchema,
-    to: TaskStateSchema,
-    actor: ActorCategorySchema,
-    /** Required iff the TARGET state is BLOCKED: what is being blocked. */
-    proposedBlockedContext: BlockedContextSchema.optional(),
-    /** Required iff `from` is BLOCKED: the STORED trusted context. */
-    currentBlockedContext: BlockedContextSchema.optional(),
-    /** Typed facts accompanying the transition (superfluous facts tolerated). */
-    evidence: z.array(TransitionEvidenceSchema).readonly().optional(),
-    /** Required iff resolving BLOCKED(execution-unknown). */
-    reconciliationOutcome: ReconciliationOutcomeSchema.optional(),
-    /** Current attempt identity, when known outside a blocked context. */
-    currentAttemptId: z.string().min(1).optional(),
-    /** Proposed NEW attempt identity where a fresh attempt is required. */
-    nextAttemptId: z.string().min(1).optional(),
-    /** Proposed NEW operation identity where a fresh operation is required. */
-    nextOperationId: z.string().min(1).optional(),
-  })
-  .readonly();
-export type CanTransitionInput = z.infer<typeof CanTransitionInputSchema>;
 
 export type CanTransitionResult =
   | {
@@ -371,11 +382,11 @@ const allowRule = (matched: TransitionRule): CanTransitionResult =>
   });
 
 /**
- * Validates a blocked context against the source/operation/reason matrix.
- * Used for both proposed (entry) and stored (exit) contexts, so a caller
- * can never fabricate an inconsistent context in either direction — in
- * particular, relabeling an execution-unknown block with an ordinary
- * reason fails because that reason is invalid for the operation.
+ * Validates a blocked context against the source/operation/reason
+ * matrix. Applied to the STORED context on exit and the PROPOSED context
+ * on entry, so an internally inconsistent context — e.g. a
+ * worker-execution block relabeled "queue-lock" — is rejected wherever
+ * it appears.
  */
 function validateBlockedContext(ctx: BlockedContext): CanTransitionResult | undefined {
   const profile = BLOCKED_OPERATION_MATRIX[ctx.blockedOperation];
@@ -426,18 +437,57 @@ const checkEvidence = (
   );
 };
 
-/** Decides transitions whose source is BLOCKED, from the trusted context. */
+/**
+ * New-attempt identity checks (D-022): the trusted current attempt ID
+ * and a distinct proposed next attempt ID are BOTH mandatory. There is
+ * no "compare only when known" path.
+ */
+const checkNewAttemptIdentity = (
+  currentAttemptId: string | undefined,
+  nextAttemptId: string | undefined,
+  label: string,
+): CanTransitionResult | undefined => {
+  if (currentAttemptId === undefined) {
+    return deny(
+      "CURRENT_ATTEMPT_ID_REQUIRED",
+      `${label} requires the trusted current attempt identity in the snapshot; it may not be omitted.`,
+    );
+  }
+  if (nextAttemptId === undefined) {
+    return deny(
+      "NEXT_ATTEMPT_ID_REQUIRED",
+      `${label} requires a proposed NEW attempt identity; a bare claim is insufficient and prior attempts are never rerun.`,
+    );
+  }
+  if (nextAttemptId === currentAttemptId) {
+    return deny(
+      "ATTEMPT_ID_REUSED",
+      "The new attempt identity must differ from the current attempt's identity.",
+    );
+  }
+  return undefined;
+};
+
+/** Decides transitions whose source is BLOCKED, from the trusted snapshot only. */
 function blockedOriginDecision(
-  input: CanTransitionInput,
+  current: TrustedCurrentSnapshot,
+  request: TransitionRequest,
   ctx: BlockedContext,
 ): CanTransitionResult {
   const inconsistent = validateBlockedContext(ctx);
   if (inconsistent !== undefined) return inconsistent;
 
-  const profile = BLOCKED_OPERATION_MATRIX[ctx.blockedOperation];
-  const supplied = input.evidence ?? [];
+  if (current.attemptId !== undefined && current.attemptId !== ctx.attemptId) {
+    return deny(
+      "ATTEMPT_ID_MISMATCH",
+      `The snapshot attempt (${current.attemptId}) does not match the blocked context's attempt (${ctx.attemptId}); the trusted snapshot is inconsistent.`,
+    );
+  }
 
-  if (input.reconciliationOutcome !== undefined) {
+  const profile = BLOCKED_OPERATION_MATRIX[ctx.blockedOperation];
+  const supplied = request.evidence ?? [];
+
+  if (request.reconciliationOutcome !== undefined) {
     // ---- Stage-aware reconciliation path (execution-unknown only) ----
     if (ctx.blockedReason !== "execution-unknown") {
       return deny(
@@ -446,20 +496,20 @@ function blockedOriginDecision(
       );
     }
     const outcomes = RECONCILIATION_MATRIX[ctx.blockedOperation];
-    const profileForOutcome = outcomes?.[input.reconciliationOutcome];
+    const profileForOutcome = outcomes?.[request.reconciliationOutcome];
     if (profileForOutcome === undefined) {
       return deny(
         "INVALID_RECONCILIATION_OUTCOME",
-        `Outcome '${input.reconciliationOutcome}' is not defined for blocked operation '${ctx.blockedOperation}'.`,
+        `Outcome '${request.reconciliationOutcome}' is not defined for blocked operation '${ctx.blockedOperation}'.`,
       );
     }
-    if (profileForOutcome.target !== input.to) {
+    if (profileForOutcome.target !== request.to) {
       return deny(
         "INVALID_RECOVERY_TARGET",
-        `Reconciling '${ctx.blockedOperation}' as '${input.reconciliationOutcome}' targets ${profileForOutcome.target} — the outcome of the original operation, not an arbitrary task outcome (got ${input.to}).`,
+        `Reconciling '${ctx.blockedOperation}' as '${request.reconciliationOutcome}' targets ${profileForOutcome.target} — the outcome of the original operation, not an arbitrary task outcome (got ${request.to}).`,
       );
     }
-    if (input.actor !== "owner") {
+    if (request.actor !== "owner") {
       return deny(
         "ACTOR_NOT_PERMITTED",
         "Only the owner may reconcile execution-unknown; automated reconciliation is refused.",
@@ -468,18 +518,18 @@ function blockedOriginDecision(
     const evidenceProblem = checkEvidence(
       profileForOutcome.requiredEvidence,
       supplied,
-      `Reconciliation of '${ctx.blockedOperation}' (${input.reconciliationOutcome})`,
+      `Reconciliation of '${ctx.blockedOperation}' (${request.reconciliationOutcome})`,
     );
     if (evidenceProblem !== undefined) return evidenceProblem;
 
     if (profileForOutcome.requiresNewOperationId === true) {
-      if (input.nextOperationId === undefined) {
+      if (request.nextOperationId === undefined) {
         return deny(
           "NEW_OPERATION_ID_REQUIRED",
           "confirmed-not-executed requires a proposed NEW operation identity; the blocked operation is never reused.",
         );
       }
-      if (input.nextOperationId === ctx.operationId) {
+      if (request.nextOperationId === ctx.operationId) {
         return deny(
           "OPERATION_ID_REUSED",
           "The new operation identity must differ from the blocked operation's identity.",
@@ -487,13 +537,13 @@ function blockedOriginDecision(
       }
     }
     if (profileForOutcome.requiresNewAttemptId === true) {
-      if (input.nextAttemptId === undefined) {
-        return deny(
-          "NEW_ATTEMPT_ID_REQUIRED",
-          "This reconciliation requires a proposed NEW attempt identity; the previous attempt remains immutable.",
-        );
-      }
-      if (input.nextAttemptId === ctx.attemptId) {
+      const identityProblem = checkNewAttemptIdentity(
+        current.attemptId,
+        request.nextAttemptId,
+        "This reconciliation",
+      );
+      if (identityProblem !== undefined) return identityProblem;
+      if (request.nextAttemptId === ctx.attemptId) {
         return deny(
           "ATTEMPT_ID_REUSED",
           "The new attempt identity must differ from the blocked attempt's identity.",
@@ -521,8 +571,8 @@ function blockedOriginDecision(
     );
   }
 
-  if (input.to === "CANCELLED") {
-    if (input.actor !== "owner") {
+  if (request.to === "CANCELLED") {
+    if (request.actor !== "owner") {
       return deny("ACTOR_NOT_PERMITTED", "Only the owner may cancel a blocked task.");
     }
     return allowRule(
@@ -547,16 +597,16 @@ function blockedOriginDecision(
       `Operation '${ctx.blockedOperation}' has no ordinary recovery; uncertainty must be reconciled explicitly.`,
     );
   }
-  if (input.to !== derived) {
+  if (request.to !== derived) {
     return deny(
       "INVALID_RECOVERY_TARGET",
-      `Ordinary recovery from a '${ctx.blockedOperation}' block returns to ${derived}, not ${input.to}.`,
+      `Ordinary recovery from a '${ctx.blockedOperation}' block returns to ${derived}, not ${request.to}.`,
     );
   }
-  if (input.actor !== "control-plane" && input.actor !== "owner") {
+  if (request.actor !== "control-plane" && request.actor !== "owner") {
     return deny(
       "ACTOR_NOT_PERMITTED",
-      `Actor '${input.actor}' may not perform ordinary blocked recovery (permitted: control-plane, owner).`,
+      `Actor '${request.actor}' may not perform ordinary blocked recovery (permitted: control-plane, owner).`,
     );
   }
   return allowRule(
@@ -573,109 +623,115 @@ function blockedOriginDecision(
 }
 
 /**
- * Pure legal-transition decision. Deny-by-default. Contextual structures
- * are validated strictly in both directions so callers can never bypass
- * a restriction by omitting, substituting, or smuggling context.
+ * Pure legal-transition decision over a trusted snapshot and a
+ * transition request. Deny-by-default; the request cannot supply or
+ * replace any element of the current state.
  */
 export function canTransition(rawInput: CanTransitionInput): CanTransitionResult {
-  const input = CanTransitionInputSchema.parse(rawInput);
+  const { current, request } = CanTransitionInputSchema.parse(rawInput);
 
-  if (input.from === input.to) {
-    return deny("SAME_STATE", `A task cannot transition from ${input.from} to itself.`);
+  if (current.state === request.to) {
+    return deny("SAME_STATE", `A task cannot transition from ${current.state} to itself.`);
   }
-  if (isTerminalState(input.from)) {
+  if (isTerminalState(current.state)) {
     return deny(
       "TERMINAL_STATE",
-      `${input.from} is terminal; terminal states never restart or transition.`,
+      `${current.state} is terminal; terminal states never restart or transition.`,
     );
   }
 
-  // Blocked-context presence: required exactly where meaningful,
-  // rejected everywhere else (D-021 correction 1).
-  if (input.to === "BLOCKED" && input.proposedBlockedContext === undefined) {
+  // Snapshot-side blocked context: required exactly when BLOCKED.
+  if (current.state === "BLOCKED" && current.blockedContext === undefined) {
+    return deny(
+      "BLOCKED_CONTEXT_REQUIRED",
+      "A BLOCKED snapshot must carry its stored blocked context; omitting it cannot bypass execution-unknown gating.",
+    );
+  }
+  if (current.state !== "BLOCKED" && current.blockedContext !== undefined) {
+    return deny(
+      "UNEXPECTED_BLOCKED_CONTEXT",
+      `The snapshot carries a blocked context but the current state is ${current.state}.`,
+    );
+  }
+
+  // Request-side proposed context: allowed only when entering BLOCKED.
+  if (request.to === "BLOCKED" && request.proposedBlockedContext === undefined) {
     return deny(
       "BLOCKED_CONTEXT_REQUIRED",
       "Entering BLOCKED requires a proposed blocked context (source, operation, reason, attempt and operation identity).",
     );
   }
-  if (input.to !== "BLOCKED" && input.proposedBlockedContext !== undefined) {
+  if (request.to !== "BLOCKED" && request.proposedBlockedContext !== undefined) {
     return deny(
       "UNEXPECTED_BLOCKED_CONTEXT",
-      `proposedBlockedContext is only meaningful when the target is BLOCKED (got to=${input.to}).`,
-    );
-  }
-  if (input.from === "BLOCKED" && input.currentBlockedContext === undefined) {
-    return deny(
-      "BLOCKED_CONTEXT_REQUIRED",
-      "Leaving BLOCKED requires the stored trusted blocked context; omitting it cannot bypass execution-unknown gating.",
-    );
-  }
-  if (input.from !== "BLOCKED" && input.currentBlockedContext !== undefined) {
-    return deny(
-      "UNEXPECTED_BLOCKED_CONTEXT",
-      `currentBlockedContext is only meaningful when the current state is BLOCKED (got from=${input.from}).`,
+      `proposedBlockedContext is only meaningful when the target is BLOCKED (got to=${request.to}).`,
     );
   }
 
-  if (input.from === "BLOCKED") {
-    // currentBlockedContext presence checked above.
-    return blockedOriginDecision(input, input.currentBlockedContext as BlockedContext);
+  if (current.state === "BLOCKED") {
+    return blockedOriginDecision(current, request, current.blockedContext as BlockedContext);
   }
 
-  if (input.reconciliationOutcome !== undefined) {
+  if (request.reconciliationOutcome !== undefined) {
     return deny(
       "UNEXPECTED_RECONCILIATION_OUTCOME",
-      `Transition ${input.from} -> ${input.to} is not a reconciliation; reconciliationOutcome must not be supplied.`,
+      `Transition ${current.state} -> ${request.to} is not a reconciliation; reconciliationOutcome must not be supplied.`,
     );
   }
 
-  const matched = TRANSITION_RULES.find((r) => r.from === input.from && r.to === input.to);
+  const matched = TRANSITION_RULES.find((r) => r.from === current.state && r.to === request.to);
   if (matched === undefined) {
     return deny(
       "UNKNOWN_TRANSITION",
-      `No legal transition from ${input.from} to ${input.to}; unknown transitions are denied by default.`,
+      `No legal transition from ${current.state} to ${request.to}; unknown transitions are denied by default.`,
     );
   }
 
-  if (input.to === "BLOCKED") {
-    const ctx = input.proposedBlockedContext as BlockedContext;
-    if (ctx.blockedFrom !== input.from) {
+  if (request.to === "BLOCKED") {
+    const ctx = request.proposedBlockedContext as BlockedContext;
+    if (ctx.blockedFrom !== current.state) {
       return deny(
         "BLOCKED_SOURCE_MISMATCH",
-        `Proposed blocked context claims source ${ctx.blockedFrom} but the transition is from ${input.from}.`,
+        `Proposed blocked context claims source ${ctx.blockedFrom} but the transition is from ${current.state}.`,
+      );
+    }
+    if (current.attemptId === undefined) {
+      return deny(
+        "CURRENT_ATTEMPT_ID_REQUIRED",
+        "Entering BLOCKED requires the trusted current attempt identity in the snapshot.",
+      );
+    }
+    if (ctx.attemptId !== current.attemptId) {
+      return deny(
+        "ATTEMPT_ID_MISMATCH",
+        `Proposed blocked context references attempt ${ctx.attemptId} but the trusted current attempt is ${current.attemptId}.`,
       );
     }
     const inconsistent = validateBlockedContext(ctx);
     if (inconsistent !== undefined) return inconsistent;
   }
 
-  if (!matched.actors.includes(input.actor)) {
+  if (!matched.actors.includes(request.actor)) {
     return deny(
       "ACTOR_NOT_PERMITTED",
-      `Actor '${input.actor}' may not perform ${input.from} -> ${input.to}; permitted: ${matched.actors.join(", ")}.`,
+      `Actor '${request.actor}' may not perform ${current.state} -> ${request.to}; permitted: ${matched.actors.join(", ")}.`,
     );
   }
 
   const evidenceProblem = checkEvidence(
     matched.requiredEvidence,
-    input.evidence ?? [],
-    `Transition ${input.from} -> ${input.to}`,
+    request.evidence ?? [],
+    `Transition ${current.state} -> ${request.to}`,
   );
   if (evidenceProblem !== undefined) return evidenceProblem;
 
   if (matched.requiresNewAttemptId) {
-    if (input.nextAttemptId === undefined) {
-      return deny(
-        "NEW_ATTEMPT_ID_REQUIRED",
-        `Transition ${input.from} -> ${input.to} requires a proposed NEW attempt identity; a bare boolean claim is insufficient and prior attempts are never rerun.`,
-      );
-    }
-    if (input.currentAttemptId !== undefined && input.nextAttemptId === input.currentAttemptId) {
-      return deny(
-        "ATTEMPT_ID_REUSED",
-        "The new attempt identity must differ from the current attempt's identity.",
-      );
-    }
+    const identityProblem = checkNewAttemptIdentity(
+      current.attemptId,
+      request.nextAttemptId,
+      `Transition ${current.state} -> ${request.to}`,
+    );
+    if (identityProblem !== undefined) return identityProblem;
   }
 
   return allowRule(matched);
@@ -683,9 +739,8 @@ export function canTransition(rawInput: CanTransitionInput): CanTransitionResult
 
 /**
  * All statically-known legal outbound transitions from a state. BLOCKED
- * is context-dependent: its outbound legality derives from
- * BLOCKED_OPERATION_MATRIX and RECONCILIATION_MATRIX, so this returns
- * only table rules (empty for BLOCKED and for terminal states).
+ * is context-dependent (BLOCKED_OPERATION_MATRIX / RECONCILIATION_MATRIX),
+ * so this returns only table rules (empty for BLOCKED and terminals).
  */
 export function legalTransitionsFrom(from: TaskState): readonly TransitionRule[] {
   TaskStateSchema.parse(from);

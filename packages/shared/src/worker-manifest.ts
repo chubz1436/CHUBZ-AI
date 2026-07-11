@@ -194,21 +194,16 @@ export const WorkerManifestSchema = z
           message: `${connector.type} workers must declare their invocation`,
         });
       }
-      if (provenanceMode !== "automated") {
-        ctx.addIssue({
-          code: "custom",
-          path: ["provenanceMode"],
-          message: `${connector.type} workers record automated provenance`,
-        });
-      }
     }
 
-    if (connector.type === "http-api" && provenanceMode !== "automated") {
+    // D-022: EVERY automated connector type — cli-headless, local-process,
+    // http-api, and browser-controlled — must record automated provenance.
+    // Owner-attested provenance is reserved for manual relay/import modes.
+    if (connector.type !== "manual-relay" && provenanceMode !== "automated") {
       ctx.addIssue({
         code: "custom",
         path: ["provenanceMode"],
-        message:
-          "an http-api connector is automated by nature and cannot claim owner-attested manual provenance",
+        message: `'${connector.type}' is an automated connector and cannot claim owner-attested provenance; owner attestation is reserved for manual relay/import workflows (D-022)`,
       });
     }
 
