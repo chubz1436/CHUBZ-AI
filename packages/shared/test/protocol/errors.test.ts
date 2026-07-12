@@ -2,10 +2,16 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_RETRYABILITY,
   FIXED_NON_RETRYABLE_CODES,
+  FieldErrorSchema,
   PROTOCOL_ERROR_CODES,
   ProtocolErrorSchema,
   makeProtocolError,
+  parseBridgeToControlPlaneMessage,
   parseClientToControlPlaneMessage,
+  parseControlPlaneToBridgeMessage,
+  parseControlPlaneToClientMessage,
+  type EnvelopeParseResult,
+  type ProtocolError,
 } from "../../src/index.js";
 
 describe("protocol error codes", () => {
@@ -290,5 +296,170 @@ describe("field-error paths (R3): bounded dot/index notation only", () => {
         expect(fe.path.startsWith("$")).toBe(true);
       }
     }
+  });
+});
+
+describe("hostile unknown-field input keeps the public parsers total (hostile-input patch)", () => {
+  // Control characters are built at runtime so no raw control byte and
+  // no escape sequence has to appear in this source file.
+  const C = String.fromCharCode;
+  const PROHIBITED_CONTROLS = new RegExp("[" + C(0) + "-" + C(31) + C(127) + "-" + C(159) + "]");
+
+  const clientBase = () => ({
+    protocolVersion: "1.0",
+    messageId: "msg-001",
+    messageKind: "task.get",
+    sentAt: "2026-07-11T08:30:00Z",
+    payload: { taskId: "task-42" },
+  });
+
+  const bridgeBase = () => ({
+    protocolVersion: "1.0",
+    messageId: "cmd-001",
+    messageKind: "bridge.ping",
+    sentAt: "2026-07-11T08:30:00Z",
+    payload: {},
+  });
+
+  const controlPlaneToClientBase = () => ({
+    protocolVersion: "1.0",
+    messageId: "msg-500",
+    messageKind: "request.accepted",
+    sentAt: "2026-07-11T08:30:00Z",
+    payload: { acceptedMessageId: "msg-001" },
+  });
+
+  const bridgeToControlPlaneBase = () => ({
+    protocolVersion: "1.0",
+    messageId: "rpt-001",
+    messageKind: "bridge.pong",
+    sentAt: "2026-07-11T08:30:00Z",
+    payload: {},
+  });
+
+  const HOSTILE_KEYS: ReadonlyArray<[label: string, key: string]> = [
+    ["C0 control character", "ctrl" + C(1) + "name"],
+    ["NUL control character", "nul" + C(0) + "key"],
+    ["C1 control character", "c1" + C(133) + "key"],
+    ["newline", "line" + C(10) + "break"],
+    ["carriage return", "cr" + C(13) + "key"],
+    ["tab", "tab" + C(9) + "key"],
+    ["whitespace-only key", "   "],
+    ["punctuation", "punct!@#key"],
+    ["forward slash", "slash/key"],
+    ["backslash", "back\\slash\\key"],
+    ["drive-letter-looking key", "C:\\evil\\path"],
+    ["UNC-looking key", "\\\\server\\share\\file"],
+    ["numeric key", "42"],
+    ["very long key", "k".repeat(500)],
+  ];
+
+  type FailedParse = { ok: false; error: ProtocolError };
+
+  const expectTotalRejection = <T>(
+    parse: (raw: unknown) => EnvelopeParseResult<T>,
+    raw: unknown,
+  ): FailedParse["error"] => {
+    let result: EnvelopeParseResult<T> | undefined;
+    expect(() => {
+      result = parse(raw);
+    }).not.toThrow();
+    if (result === undefined || result.ok) {
+      throw new Error("expected the parser to return a failed EnvelopeParseResult");
+    }
+    const error = result.error;
+    expect(error.code).toBe("VALIDATION_ERROR");
+    expect(ProtocolErrorSchema.safeParse(error).success).toBe(true);
+    expect(PROHIBITED_CONTROLS.test(error.summary)).toBe(false);
+    for (const fe of error.fieldErrors ?? []) {
+      expect(FieldErrorSchema.safeParse(fe).success, fe.path).toBe(true);
+      expect(PROHIBITED_CONTROLS.test(fe.path)).toBe(false);
+      expect(PROHIBITED_CONTROLS.test(fe.message)).toBe(false);
+    }
+    return error;
+  };
+
+  it("Client → Control Plane parser stays total for every hostile envelope key", () => {
+    for (const [label, key] of HOSTILE_KEYS) {
+      expectTotalRejection(parseClientToControlPlaneMessage, { ...clientBase(), [key]: "x" });
+      expect(true, label).toBe(true);
+    }
+  });
+
+  it("Control Plane → Bridge parser stays total for every hostile envelope key", () => {
+    for (const [label, key] of HOSTILE_KEYS) {
+      expectTotalRejection(parseControlPlaneToBridgeMessage, { ...bridgeBase(), [key]: "x" });
+      expect(true, label).toBe(true);
+    }
+  });
+
+  it("Control Plane → Client and Bridge → Control Plane parsers share the same totality", () => {
+    for (const [, key] of HOSTILE_KEYS.slice(0, 4)) {
+      expectTotalRejection(parseControlPlaneToClientMessage, {
+        ...controlPlaneToClientBase(),
+        [key]: "x",
+      });
+      expectTotalRejection(parseBridgeToControlPlaneMessage, {
+        ...bridgeToControlPlaneBase(),
+        [key]: "x",
+      });
+    }
+  });
+
+  it("hostile keys inside the payload are handled identically", () => {
+    const raw = {
+      ...clientBase(),
+      payload: { taskId: "task-42", ["bad" + C(2) + "payloadKey"]: 1 },
+    };
+    const error = expectTotalRejection(parseClientToControlPlaneMessage, raw);
+    const paths = (error.fieldErrors ?? []).map((fe) => fe.path);
+    expect(paths.some((p) => p.startsWith("$.payload."))).toBe(true);
+  });
+
+  it("multiple hostile keys in one message receive distinct deterministic paths", () => {
+    const raw = {
+      ...clientBase(),
+      ["bad" + C(1) + "a"]: 1,
+      ["bad" + C(2) + "b"]: 2,
+      ["bad/c"]: 3,
+    };
+    const error = expectTotalRejection(parseClientToControlPlaneMessage, raw);
+    const paths = (error.fieldErrors ?? []).map((fe) => fe.path);
+    expect(paths.length).toBeGreaterThanOrEqual(3);
+    expect(new Set(paths).size).toBe(paths.length);
+    const synthetic = paths.filter((p) => /\.unknownFields\[\d+\]$/.test(p));
+    expect(synthetic.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("parser output is deterministic for the same hostile input", () => {
+    const raw = () => ({
+      ...clientBase(),
+      ["bad" + C(1) + "a"]: 1,
+      ["bad" + C(2) + "b"]: 2,
+    });
+    const first = expectTotalRejection(parseClientToControlPlaneMessage, raw());
+    const second = expectTotalRejection(parseClientToControlPlaneMessage, raw());
+    expect(second).toEqual(first);
+  });
+
+  it("identifier-safe unknown keys keep their readable named path", () => {
+    const error = expectTotalRejection(parseClientToControlPlaneMessage, {
+      ...clientBase(),
+      smuggled: "field",
+    });
+    const paths = (error.fieldErrors ?? []).map((fe) => fe.path);
+    expect(paths).toContain("$.smuggled");
+  });
+
+  it("hostile unknown keys and ordinary field failures coexist in one result", () => {
+    const raw = {
+      ...clientBase(),
+      payload: { taskId: "../not-safe" },
+      ["bad" + C(3) + "x"]: 1,
+    };
+    const error = expectTotalRejection(parseClientToControlPlaneMessage, raw);
+    const paths = (error.fieldErrors ?? []).map((fe) => fe.path);
+    expect(paths.some((p) => /\.unknownFields\[\d+\]$/.test(p))).toBe(true);
+    expect(paths.some((p) => p.startsWith("$.payload"))).toBe(true);
   });
 });

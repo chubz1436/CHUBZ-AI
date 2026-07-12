@@ -55,7 +55,7 @@ Performed by **Antigravity** (read-only and trivially reversible checks), comple
 **Tests:** none (no code).
 **Risks:** design churn delaying start → time-box review to one round plus one revision. Phase 0B may invalidate connector assumptions (U-1/U-2); that is its purpose, and manual relay absorbs the outcome.
 **Rollback:** none needed — documents only.
-**STOP POINT (satisfied for M1A):** the owner recorded the explicit M1A GO after reviewing the Phase 0B report. M1A is completed on `task/m1a-core-contracts`; its review/final correction is current; merge approval is pending; **M1B remains pending and unauthorized** with its own GO required.
+**STOP POINT (status as of 2026-07-12):** Phase 0B completed with a conditional pass and the owner recorded the explicit M1A GO after reviewing its report. M1A is completed and merged into `main`. M1B is implemented on `task/m1b-protocol-contracts` under its own owner GO and is undergoing final correction/review; its merge remains pending owner approval. **M1C remains pending and unauthorized** with its own GO required.
 
 ---
 
@@ -186,11 +186,11 @@ Performed by **Antigravity** (read-only and trivially reversible checks), comple
 
 ---
 
-## First Implementation Tasks — Bounded Split `ACCEPTED — NOT EXECUTED`
+## First Implementation Tasks — Bounded Split `ACCEPTED — IN EXECUTION (M1A merged; M1B in final review)`
 
 The former single `packages/shared` task is split into five bounded subtasks. **The assigned implementation worker receives exactly one subtask at a time, each dispatched only after owner approval of the previous one's review.** Per D-019 the current assignee is **BUNSO/Fable 5**, with Codex as backup and handoff worker; the two never edit the same files concurrently. All subtasks are pure library code — no network, no filesystem side effects, no framework.
 
-The next pending task is **"BUNSO/Fable 5 M1A Core Contracts"** (formerly "Codex M1A Core Contracts"). It is **pending and not authorized to begin**: Antigravity's **Phase 0B** operational feasibility validation is the current task and has not yet been executed; the owner must then review the Phase 0B report and record an explicit GO for Phase 1.
+Status (corrected 2026-07-12): Phase 0B is completed with a conditional pass and the owner reviewed its report. **M1A Core Contracts is completed and merged into `main`.** **M1B Protocol Contracts is implemented on `task/m1b-protocol-contracts` and undergoing final correction/review; its merge remains pending owner approval.** **M1C remains pending and unauthorized**; it requires its own explicit owner GO.
 
 - **M1A — Core contracts:** task states and the legal-transition table (FINAL_ARCHITECTURE_DESIGN.md §10, including `BLOCKED` reason codes), the twelve-command grammar, and the worker manifest schema (§8.3). **Unit tests only** — every legal transition accepted, every illegal transition rejected.
 - **M1B — Protocol contracts:** client↔Control-Plane and Control-Plane↔Bridge message envelopes, idempotency keys, event cursors. **Unit tests only.**
@@ -208,7 +208,7 @@ Why M1A first: it is the smallest fully bounded start, zero-risk (no I/O), force
 |---|---|---|
 | 0A | Owner GO on this package post-Bantay review — **granted** | Decisions resolved — **completed** |
 | 0B | Phase 0A complete — **entered** | Antigravity validation executed and U-1/U-2 answered, then owner reviews the report — **completed, conditional pass** |
-| 1 | Phase 0B passed, owner reviewed the validation report, and owner recorded an explicit GO — **granted for M1A only; M1A completed, reviewed, owner-approved, and merged into `main`; M1B+ still needs its own GO** | Live demo + acceptance list + security reviews |
+| 1 | Phase 0B passed, owner reviewed the validation report, and owner recorded an explicit GO — **M1A completed, reviewed, owner-approved, and merged into `main`; M1B GO granted, implemented on its task branch, in final correction/review, merge pending owner approval; M1C+ still needs its own GO** | Live demo + acceptance list + security reviews |
 | 2 | Owner GO | §18 checklist evidenced; explicit remote-enable decision |
 | 3 | Owner GO | Adapter contract suite green per adapter |
 | 4 | Owner GO | Concurrency + hardening acceptance tests |

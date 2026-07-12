@@ -192,17 +192,81 @@ const formatIssuePath = (segments: ReadonlyArray<PropertyKey>): string => {
   return path;
 };
 
-// Strip anything displayText would refuse (markup openers, stack
-// frames, path-like runs) so third-party validator text can never leak
-// unsafe content into a protocol error summary.
+const SUMMARY_TEXT_SCHEMA = displayText(PROTOCOL_LIMITS.maxErrorSummaryLength);
+const FALLBACK_MESSAGE = "invalid value";
+
+/**
+ * Totality-safe sanitizer (hostile-input patch). Validator text can
+ * embed arbitrary attacker content — unknown-key names are echoed into
+ * zod messages — so everything displayText refuses is removed BEFORE
+ * re-validation: the entire stack-trace tail, markup openers, drive and
+ * UNC path runs, and every C0/C1 control character (including newline,
+ * carriage return, and tab) is replaced, whitespace is collapsed, and
+ * the result is bounded. The sanitized text is then checked against the
+ * SAME display-text contract ProtocolErrorSchema enforces; if nothing
+ * readable survives — or anything unsafe ever did — the fixed fallback
+ * is returned instead. This function never throws and its result always
+ * satisfies the summary/message schema, keeping the public parsers
+ * total.
+ */
 const sanitizeSummary = (value: string): string => {
   const cleaned = value
+    .replace(/\r?\n\s+at\s[\s\S]*$/, " ")
     .replace(/<[a-zA-Z!/]/g, " ")
-    .replace(/\n\s+at\s/g, " ")
     .replace(/[A-Za-z]:[\\/]/g, " ")
-    .replace(/\\\\/g, " ");
+    .replace(/\\\\/g, " ")
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\u0000-\u001F\u007F-\u009F]/g, " ")
+    .replace(/ {2,}/g, " ")
+    .trim();
   const bounded = truncate(cleaned, PROTOCOL_LIMITS.maxErrorSummaryLength);
-  return bounded.trim() === "" ? "invalid value" : bounded;
+  if (bounded === "") return FALLBACK_MESSAGE;
+  return SUMMARY_TEXT_SCHEMA.safeParse(bounded).success ? bounded : FALLBACK_MESSAGE;
+};
+
+const UNKNOWN_FIELD_SEGMENT = "unknownFields";
+
+type ValidatorIssues = z.ZodError["issues"];
+
+/**
+ * Builds bounded field errors from validator issues (hostile-input
+ * patch). Unrecognized-key issues are expanded to one entry PER KEY so
+ * multiple hostile unknown fields never collapse into a single path:
+ * keys that are plain identifiers keep their real name
+ * (`$.smuggled`); keys that cannot be represented safely (control
+ * characters, separators, drive/UNC shapes, numerics, oversized text)
+ * receive a deterministic synthetic path — `<base>.unknownFields[n]`
+ * with a per-parse counter — that satisfies FieldErrorSchema without
+ * ever carrying any of the hostile key text. Never throws: every path
+ * is valid by construction and every message is sanitized.
+ */
+const buildFieldErrors = (issues: ValidatorIssues): FieldError[] => {
+  const fieldErrors: FieldError[] = [];
+  let syntheticIndex = 0;
+  for (const issue of issues) {
+    if (fieldErrors.length >= PROTOCOL_LIMITS.maxFieldErrors) break;
+    const base = formatIssuePath(issue.path);
+    if (issue.code === "unrecognized_keys" && Array.isArray(issue.keys)) {
+      for (const key of issue.keys) {
+        if (fieldErrors.length >= PROTOCOL_LIMITS.maxFieldErrors) break;
+        const named = `${base}.${key}`;
+        if (IDENTIFIER_SEGMENT_RE.test(key) && named.length <= MAX_FIELD_PATH_LENGTH) {
+          fieldErrors.push({ path: named, message: "unrecognized key" });
+        } else {
+          const synthetic = `${base}.${UNKNOWN_FIELD_SEGMENT}[${syntheticIndex}]`;
+          const rooted = `$.${UNKNOWN_FIELD_SEGMENT}[${syntheticIndex}]`;
+          syntheticIndex += 1;
+          fieldErrors.push({
+            path: synthetic.length <= MAX_FIELD_PATH_LENGTH ? synthetic : rooted,
+            message: "unrecognized key (name unsafe to display)",
+          });
+        }
+      }
+    } else {
+      fieldErrors.push({ path: base, message: sanitizeSummary(issue.message) });
+    }
+  }
+  return fieldErrors;
 };
 
 /**
@@ -255,18 +319,23 @@ export function parseEnvelopeWith<S extends z.ZodType>(
 
   const parsed = schema.safeParse(raw);
   if (!parsed.success) {
-    const fieldErrors: FieldError[] = parsed.error.issues
-      .slice(0, PROTOCOL_LIMITS.maxFieldErrors)
-      .map((issue) => ({
-        path: formatIssuePath(issue.path),
-        message: sanitizeSummary(issue.message),
-      }));
-    return {
-      ok: false,
-      error: makeProtocolError("VALIDATION_ERROR", "The message failed schema validation.", {
-        fieldErrors,
-      }),
-    };
+    try {
+      return {
+        ok: false,
+        error: makeProtocolError("VALIDATION_ERROR", "The message failed schema validation.", {
+          fieldErrors: buildFieldErrors(parsed.error.issues),
+        }),
+      };
+    } catch {
+      // Absolute totality backstop (hostile-input patch): if an
+      // unforeseen issue shape ever produced an unrepresentable field
+      // error, the parser still returns its documented result — built
+      // from literals only, so this branch cannot throw.
+      return {
+        ok: false,
+        error: makeProtocolError("VALIDATION_ERROR", "The message failed schema validation."),
+      };
+    }
   }
   return { ok: true, message: parsed.data };
 }
