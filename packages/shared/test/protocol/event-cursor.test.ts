@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   EventSequenceSchema,
+  ResumeResultSchema,
+  RESUME_RESULT_KINDS,
   SequenceNumberSchema,
   StreamCursorSchema,
   StreamStateSchema,
@@ -39,12 +41,62 @@ describe("cursor model: last successfully consumed event", () => {
     expect(classifyResume(cursor(3), stream(10))).toEqual({ kind: "valid", nextSequence: 4 });
   });
 
-  it("cursor equal to head is valid with nothing pending (next = head + 1)", () => {
-    expect(classifyResume(cursor(5), stream(5))).toEqual({ kind: "valid", nextSequence: 6 });
+  it("cursor equal to head is up-to-date with no next sequence (R3)", () => {
+    expect(classifyResume(cursor(5), stream(5))).toEqual({ kind: "up-to-date", headSequence: 5 });
   });
 
-  it("cursor 0 against an empty stream is valid", () => {
-    expect(classifyResume(cursor(0), stream(0))).toEqual({ kind: "valid", nextSequence: 1 });
+  it("cursor 0 against an empty stream is up-to-date (R3)", () => {
+    expect(classifyResume(cursor(0), stream(0))).toEqual({ kind: "up-to-date", headSequence: 0 });
+  });
+});
+
+describe("maximum-boundary safety (R3): no helper may emit MAX_SAFE_INTEGER + 1", () => {
+  const MAX = Number.MAX_SAFE_INTEGER;
+
+  it("a caught-up cursor at MAX_SAFE_INTEGER returns up-to-date with no nextSequence", () => {
+    const result = classifyResume(cursor(MAX), stream(MAX));
+    expect(result).toEqual({ kind: "up-to-date", headSequence: MAX });
+    expect("nextSequence" in result).toBe(false);
+  });
+
+  it("one below the maximum still yields a safe nextSequence of exactly MAX", () => {
+    expect(classifyResume(cursor(MAX - 1), stream(MAX))).toEqual({
+      kind: "valid",
+      nextSequence: MAX,
+    });
+  });
+
+  it("a cursor at MAX against a lower head is cursor-ahead, not an overflow", () => {
+    expect(classifyResume(cursor(MAX), stream(MAX - 1))).toEqual({
+      kind: "cursor-ahead",
+      headSequence: MAX - 1,
+    });
+  });
+
+  it("every classifyResume result validates against ResumeResultSchema", () => {
+    const cases: Array<[StreamCursor, StreamState]> = [
+      [cursor(0), stream(0)], // up-to-date at empty stream
+      [cursor(0), stream(5)], // valid
+      [cursor(5), stream(5)], // up-to-date
+      [cursor(6), stream(5)], // cursor-ahead
+      [cursor(2), stream(10, 5)], // cursor-too-old
+      [cursor(3, "stream-a"), stream(10, 1, "stream-b")], // unknown-stream
+      [cursor(MAX), stream(MAX)], // up-to-date at the maximum boundary
+      [cursor(MAX - 1), stream(MAX)], // valid at the maximum boundary
+    ];
+    for (const [c, s] of cases) {
+      const result = classifyResume(c, s);
+      expect(ResumeResultSchema.safeParse(result).success).toBe(true);
+      if (result.kind === "valid") {
+        expect(Number.isSafeInteger(result.nextSequence)).toBe(true);
+      }
+    }
+  });
+
+  it("ordinary off-by-one behavior around the caught-up boundary", () => {
+    expect(classifyResume(cursor(4), stream(5))).toEqual({ kind: "valid", nextSequence: 5 });
+    expect(classifyResume(cursor(5), stream(5))).toEqual({ kind: "up-to-date", headSequence: 5 });
+    expect(classifyResume(cursor(6), stream(5))).toEqual({ kind: "cursor-ahead", headSequence: 5 });
   });
 });
 
@@ -143,6 +195,36 @@ describe("cursor comparison", () => {
 
   it("cursors from different streams are not comparable", () => {
     expect(() => compareCursors(cursor(1, "stream-a"), cursor(1, "stream-b"))).toThrow(TypeError);
+  });
+});
+
+describe("resume result kinds", () => {
+  it("defines exactly the five documented kinds including up-to-date (R3)", () => {
+    expect([...RESUME_RESULT_KINDS]).toEqual([
+      "valid",
+      "up-to-date",
+      "cursor-ahead",
+      "cursor-too-old",
+      "unknown-stream",
+    ]);
+  });
+
+  it("an up-to-date result cannot carry a nextSequence field", () => {
+    expect(
+      ResumeResultSchema.safeParse({ kind: "up-to-date", headSequence: 5, nextSequence: 6 })
+        .success,
+    ).toBe(false);
+    expect(
+      ResumeResultSchema.safeParse({ kind: "up-to-date", headSequence: Number.MAX_SAFE_INTEGER })
+        .success,
+    ).toBe(true);
+  });
+
+  it("a valid result cannot carry an unsafe next sequence", () => {
+    expect(
+      ResumeResultSchema.safeParse({ kind: "valid", nextSequence: Number.MAX_SAFE_INTEGER + 2 })
+        .success,
+    ).toBe(false);
   });
 });
 

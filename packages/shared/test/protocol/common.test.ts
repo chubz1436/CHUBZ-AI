@@ -103,6 +103,33 @@ describe("timestamps", () => {
       expect(IsoUtcTimestampSchema.safeParse(sentAt).success).toBe(false);
     }
   });
+
+  it("rejects impossible calendar dates that Date.parse would normalize (R3)", () => {
+    for (const sentAt of [
+      "2026-02-30T08:30:00Z", // February 30 does not exist
+      "2025-02-29T08:30:00Z", // 2025 is not a leap year
+      "2026-04-31T08:30:00Z", // April has 30 days
+      "2026-06-00T08:30:00Z", // day 00
+      "2026-00-10T08:30:00Z", // month 00
+      "2026-07-11T24:00:00Z", // hour 24 rolls to the next day
+      "2026-07-11T08:60:00Z", // minute 60
+      "2026-07-11T08:30:60Z", // second 60
+    ]) {
+      expect(IsoUtcTimestampSchema.safeParse(sentAt).success, sentAt).toBe(false);
+    }
+  });
+
+  it("accepts valid leap days and exact calendar boundaries (R3)", () => {
+    for (const sentAt of [
+      "2024-02-29T08:30:00Z", // real leap day
+      "2028-02-29T23:59:59.999Z", // leap day at the day's edge with millis
+      "2026-12-31T23:59:59Z",
+      "2026-01-01T00:00:00Z",
+      "2026-04-30T08:30:00.5Z", // short fractional part is preserved exactly
+    ]) {
+      expect(IsoUtcTimestampSchema.safeParse(sentAt).success, sentAt).toBe(true);
+    }
+  });
 });
 
 describe("identifiers", () => {

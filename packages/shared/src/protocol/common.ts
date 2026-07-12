@@ -60,14 +60,48 @@ export const SlugIdSchema = z
   .regex(/^[a-z0-9][a-z0-9-]{0,62}$/, "must be a lowercase slug (a-z, 0-9, hyphen)");
 export type SlugId = z.infer<typeof SlugIdSchema>;
 
+const ISO_UTC_TIMESTAMP_RE =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,3}))?Z$/;
+
+/**
+ * Exact UTC calendar validation (R3): every parsed component — year,
+ * month, day, hour, minute, second, and the supported fractional part —
+ * must round-trip through the UTC calendar unchanged. This rejects
+ * normalization-prone impossible dates that Date.parse would silently
+ * roll over (2026-02-30 → Mar 2, 2025-02-29 → Mar 1) while keeping real
+ * leap days (2024-02-29) valid.
+ */
+const isExactUtcCalendarTimestamp = (value: string): boolean => {
+  const match = ISO_UTC_TIMESTAMP_RE.exec(value);
+  if (match === null) return false;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+  const second = Number(match[6]);
+  const millisecond = match[7] === undefined ? 0 : Number(match[7].padEnd(3, "0"));
+  // setUTCFullYear avoids Date.UTC's mapping of years 0–99 to 1900–1999,
+  // preserving the full 0000–9999 range the bounded format allows.
+  const date = new Date(0);
+  date.setUTCFullYear(year, month - 1, day);
+  date.setUTCHours(hour, minute, second, millisecond);
+  return (
+    date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day &&
+    date.getUTCHours() === hour &&
+    date.getUTCMinutes() === minute &&
+    date.getUTCSeconds() === second &&
+    date.getUTCMilliseconds() === millisecond
+  );
+};
+
 /** Strict ISO-8601 UTC timestamp, e.g. 2026-07-11T08:30:00Z. */
 export const IsoUtcTimestampSchema = z
   .string()
-  .regex(
-    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/,
-    "must be an ISO-8601 UTC timestamp ending in Z",
-  )
-  .refine((value) => !Number.isNaN(Date.parse(value)), "must be a real calendar timestamp");
+  .regex(ISO_UTC_TIMESTAMP_RE, "must be an ISO-8601 UTC timestamp ending in Z")
+  .refine(isExactUtcCalendarTimestamp, "must be an exact UTC calendar timestamp");
 export type IsoUtcTimestamp = z.infer<typeof IsoUtcTimestampSchema>;
 
 /** Idempotency key: log-safe, bounded, with a minimum length floor. */

@@ -20,6 +20,7 @@ export const PROTOCOL_ERROR_CODES = Object.freeze([
   "UNKNOWN_MESSAGE_KIND",
   "VALIDATION_ERROR",
   "IDEMPOTENCY_CONFLICT",
+  "EXECUTION_UNKNOWN",
   "CURSOR_AHEAD",
   "CURSOR_TOO_OLD",
   "UNKNOWN_STREAM",
@@ -34,9 +35,15 @@ export const ProtocolErrorCodeSchema = z.enum(PROTOCOL_ERROR_CODES);
 export type ProtocolErrorCode = z.infer<typeof ProtocolErrorCodeSchema>;
 
 /**
- * Default retryability per code. Transient conditions are retryable;
- * contract violations and conflicts are not (a conflict must never be
- * blindly retried into execution).
+ * Default retryability per code (R3). Only genuinely transient
+ * PRE-EXECUTION conditions default to retryable. INTERNAL_ERROR defaults
+ * to NON-retryable because a generic internal failure cannot prove the
+ * operation never started — blind retry could hide ambiguous execution.
+ *
+ * EXECUTION_UNKNOWN is the dedicated machine-readable code for "the
+ * outcome of the operation cannot be proven; owner-reviewed
+ * reconciliation is required" (D-020/D-021/D-022). It is never
+ * retryable and cannot be overridden to retryable.
  */
 export const DEFAULT_RETRYABILITY: Readonly<Record<ProtocolErrorCode, boolean>> = Object.freeze({
   INVALID_ENVELOPE: false,
@@ -44,6 +51,7 @@ export const DEFAULT_RETRYABILITY: Readonly<Record<ProtocolErrorCode, boolean>> 
   UNKNOWN_MESSAGE_KIND: false,
   VALIDATION_ERROR: false,
   IDEMPOTENCY_CONFLICT: false,
+  EXECUTION_UNKNOWN: false,
   CURSOR_AHEAD: false,
   CURSOR_TOO_OLD: false,
   UNKNOWN_STREAM: false,
@@ -52,24 +60,72 @@ export const DEFAULT_RETRYABILITY: Readonly<Record<ProtocolErrorCode, boolean>> 
   BUSY: true,
   WORKER_OFFLINE: true,
   UNAUTHORIZED: false,
-  INTERNAL_ERROR: true,
+  INTERNAL_ERROR: false,
 });
 
+/**
+ * Codes whose non-retryability is FIXED (R3): contract/validation
+ * violations, idempotency conflicts, and execution-unknown must never
+ * be presented as retryable. The schema itself rejects
+ * `retryable: true` for these codes, so neither makeProtocolError
+ * options nor a hand-built object can override them.
+ */
+export const FIXED_NON_RETRYABLE_CODES = Object.freeze([
+  "INVALID_ENVELOPE",
+  "UNSUPPORTED_PROTOCOL_VERSION",
+  "UNKNOWN_MESSAGE_KIND",
+  "VALIDATION_ERROR",
+  "IDEMPOTENCY_CONFLICT",
+  "EXECUTION_UNKNOWN",
+] as const);
+export type FixedNonRetryableCode = (typeof FIXED_NON_RETRYABLE_CODES)[number];
+
+const isFixedNonRetryable = (code: ProtocolErrorCode): boolean =>
+  (FIXED_NON_RETRYABLE_CODES as readonly string[]).includes(code);
+
+/**
+ * Bounded dot/index field-path notation (R3): an optional `$` root,
+ * identifier segments, and bounded numeric indexes only — e.g.
+ * "payload", "payload.taskId", "payload.items[0].name", "$",
+ * "$.payload.items[0]". Control characters, whitespace, `/`, `\`, `:`
+ * (drive letters), UNC prefixes, `..`, empty segments, and stack-trace
+ * text are unrepresentable by construction.
+ */
+const FIELD_ERROR_PATH_RE =
+  /^(?:\$(?:\.[A-Za-z_][A-Za-z0-9_]*|\[\d{1,16}\])*|[A-Za-z_][A-Za-z0-9_]*(?:\[\d{1,16}\])*(?:\.[A-Za-z_][A-Za-z0-9_]*(?:\[\d{1,16}\])*)*)$/;
+
 export const FieldErrorSchema = z.strictObject({
-  /** Dot-joined path into the offending message, e.g. "payload.taskId". */
-  path: z.string().min(1).max(256),
+  /** Bounded dot/index path into the offending message, e.g. "payload.taskId". */
+  path: z
+    .string()
+    .min(1)
+    .max(256)
+    .regex(
+      FIELD_ERROR_PATH_RE,
+      "must be a bounded dot/index field path (e.g. $.payload.items[0].name)",
+    ),
   message: displayText(PROTOCOL_LIMITS.maxErrorSummaryLength),
 });
 export type FieldError = z.infer<typeof FieldErrorSchema>;
 
-export const ProtocolErrorSchema = z.strictObject({
-  code: ProtocolErrorCodeSchema,
-  summary: displayText(PROTOCOL_LIMITS.maxErrorSummaryLength),
-  retryable: z.boolean(),
-  fieldErrors: z.array(FieldErrorSchema).min(1).max(PROTOCOL_LIMITS.maxFieldErrors).optional(),
-  relatesToMessageId: SafeIdSchema.optional(),
-  correlationId: SafeIdSchema.optional(),
-});
+export const ProtocolErrorSchema = z
+  .strictObject({
+    code: ProtocolErrorCodeSchema,
+    summary: displayText(PROTOCOL_LIMITS.maxErrorSummaryLength),
+    retryable: z.boolean(),
+    fieldErrors: z.array(FieldErrorSchema).min(1).max(PROTOCOL_LIMITS.maxFieldErrors).optional(),
+    relatesToMessageId: SafeIdSchema.optional(),
+    correlationId: SafeIdSchema.optional(),
+  })
+  .superRefine((error, ctx) => {
+    if (error.retryable && isFixedNonRetryable(error.code)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["retryable"],
+        message: `${error.code} is never retryable; it cannot be overridden to retryable`,
+      });
+    }
+  });
 export type ProtocolError = z.infer<typeof ProtocolErrorSchema>;
 
 export interface MakeProtocolErrorOptions {
@@ -108,6 +164,33 @@ export type EnvelopeParseResult<T> =
 
 const truncate = (value: string, max: number): string =>
   value.length <= max ? value : `${value.slice(0, max - 1)}…`;
+
+const IDENTIFIER_SEGMENT_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const MAX_FIELD_PATH_LENGTH = 256;
+
+/**
+ * Renders a validator issue path in the bounded `$`-rooted dot/index
+ * notation (R3). Array indexes become `[n]`; property names that are
+ * not plain identifiers (unknown-key names can be arbitrary attacker
+ * text) are sanitized to identifier characters, never emitted verbatim.
+ * Segments that would exceed the length bound are dropped, so the
+ * result is always a valid (possibly shortened) prefix path.
+ */
+const formatIssuePath = (segments: ReadonlyArray<PropertyKey>): string => {
+  let path = "$";
+  for (const segment of segments) {
+    let rendered: string;
+    if (typeof segment === "number" && Number.isInteger(segment) && segment >= 0) {
+      rendered = `[${segment}]`;
+    } else {
+      const cleaned = String(segment).replace(/[^A-Za-z0-9_]/g, "_");
+      rendered = `.${IDENTIFIER_SEGMENT_RE.test(cleaned) ? cleaned : `_${cleaned}`}`;
+    }
+    if (path.length + rendered.length > MAX_FIELD_PATH_LENGTH) break;
+    path += rendered;
+  }
+  return path;
+};
 
 // Strip anything displayText would refuse (markup openers, stack
 // frames, path-like runs) so third-party validator text can never leak
@@ -175,7 +258,7 @@ export function parseEnvelopeWith<S extends z.ZodType>(
     const fieldErrors: FieldError[] = parsed.error.issues
       .slice(0, PROTOCOL_LIMITS.maxFieldErrors)
       .map((issue) => ({
-        path: truncate(issue.path.length === 0 ? "(root)" : issue.path.map(String).join("."), 256),
+        path: formatIssuePath(issue.path),
         message: sanitizeSummary(issue.message),
       }));
     return {

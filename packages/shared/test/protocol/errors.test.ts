@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_RETRYABILITY,
+  FIXED_NON_RETRYABLE_CODES,
   PROTOCOL_ERROR_CODES,
   ProtocolErrorSchema,
   makeProtocolError,
+  parseClientToControlPlaneMessage,
 } from "../../src/index.js";
 
 describe("protocol error codes", () => {
@@ -14,6 +16,7 @@ describe("protocol error codes", () => {
       "UNKNOWN_MESSAGE_KIND",
       "VALIDATION_ERROR",
       "IDEMPOTENCY_CONFLICT",
+      "EXECUTION_UNKNOWN",
       "CURSOR_AHEAD",
       "CURSOR_TOO_OLD",
       "UNKNOWN_STREAM",
@@ -35,17 +38,73 @@ describe("protocol error codes", () => {
     }
   });
 
-  it("transient conditions are retryable; conflicts and contract violations are not", () => {
+  it("only genuinely transient pre-execution conditions are retryable by default (R3)", () => {
     expect(DEFAULT_RETRYABILITY.BUSY).toBe(true);
     expect(DEFAULT_RETRYABILITY.WORKER_OFFLINE).toBe(true);
-    expect(DEFAULT_RETRYABILITY.INTERNAL_ERROR).toBe(true);
+    expect(DEFAULT_RETRYABILITY.INTERNAL_ERROR).toBe(false);
+    expect(DEFAULT_RETRYABILITY.EXECUTION_UNKNOWN).toBe(false);
     expect(DEFAULT_RETRYABILITY.IDEMPOTENCY_CONFLICT).toBe(false);
     expect(DEFAULT_RETRYABILITY.VALIDATION_ERROR).toBe(false);
     expect(DEFAULT_RETRYABILITY.UNAUTHORIZED).toBe(false);
   });
 
-  it("retryability can be overridden explicitly", () => {
-    const error = makeProtocolError("BUSY", "Queue is saturated.", { retryable: false });
+  it("retryability of non-fixed codes can be overridden explicitly", () => {
+    const busy = makeProtocolError("BUSY", "Queue is saturated.", { retryable: false });
+    expect(busy.retryable).toBe(false);
+    // A runtime that PROVED an internal failure happened before execution
+    // may mark that specific case retryable; the default stays false.
+    const internal = makeProtocolError("INTERNAL_ERROR", "Failed before execution began.", {
+      retryable: true,
+    });
+    expect(internal.retryable).toBe(true);
+  });
+});
+
+describe("fixed non-retryable codes (R3)", () => {
+  it("names exactly the contract-violation, conflict, and execution-unknown codes", () => {
+    expect([...FIXED_NON_RETRYABLE_CODES]).toEqual([
+      "INVALID_ENVELOPE",
+      "UNSUPPORTED_PROTOCOL_VERSION",
+      "UNKNOWN_MESSAGE_KIND",
+      "VALIDATION_ERROR",
+      "IDEMPOTENCY_CONFLICT",
+      "EXECUTION_UNKNOWN",
+    ]);
+  });
+
+  it("makeProtocolError refuses to override a fixed non-retryable code to retryable", () => {
+    for (const code of FIXED_NON_RETRYABLE_CODES) {
+      expect(() =>
+        makeProtocolError(code, "Attempted forbidden retryable override.", { retryable: true }),
+      ).toThrow();
+    }
+  });
+
+  it("hand-built errors claiming a fixed code is retryable fail schema validation", () => {
+    for (const code of FIXED_NON_RETRYABLE_CODES) {
+      expect(
+        ProtocolErrorSchema.safeParse({
+          code,
+          summary: "Claims to be retryable.",
+          retryable: true,
+        }).success,
+      ).toBe(false);
+      expect(
+        ProtocolErrorSchema.safeParse({
+          code,
+          summary: "Correctly non-retryable.",
+          retryable: false,
+        }).success,
+      ).toBe(true);
+    }
+  });
+
+  it("EXECUTION_UNKNOWN exists as the machine-readable reconciliation-required code", () => {
+    const error = makeProtocolError(
+      "EXECUTION_UNKNOWN",
+      "The operation outcome cannot be proven; owner reconciliation is required.",
+    );
+    expect(error.code).toBe("EXECUTION_UNKNOWN");
     expect(error.retryable).toBe(false);
   });
 });
@@ -113,5 +172,123 @@ describe("error safety", () => {
 
   it("oversized summaries are refused", () => {
     expect(() => makeProtocolError("BUSY", "x".repeat(2_001))).toThrow();
+  });
+});
+
+describe("field-error paths (R3): bounded dot/index notation only", () => {
+  const fieldError = (path: string) => ({ path, message: "invalid value" });
+
+  it("accepts the documented dot/index path forms", () => {
+    for (const path of [
+      "payload",
+      "payload.taskId",
+      "payload.items[0].name",
+      "$",
+      "$.payload.items[0]",
+      "$[3]",
+      "payload.items[12345]",
+      "_private.field_1",
+    ]) {
+      expect(
+        ProtocolErrorSchema.safeParse({
+          code: "VALIDATION_ERROR",
+          summary: "The message failed schema validation.",
+          retryable: false,
+          fieldErrors: [fieldError(path)],
+        }).success,
+        path,
+      ).toBe(true);
+    }
+  });
+
+  it("rejects control characters, separators, traversal, and trace-like paths", () => {
+    for (const path of [
+      "payload\u0000.taskId", // NUL control character
+      "payload\n.taskId", // newline
+      "payload\t.taskId", // tab
+      "payload/items", // forward slash
+      "payload\\items", // backslash
+      "C:\\Users\\owner\\secret", // drive-letter path
+      "C:/Users/owner/secret", // drive-letter path, forward slashes
+      "\\\\server\\share\\file", // UNC path
+      "..", // traversal
+      "payload..taskId", // empty segment / traversal
+      "payload.", // trailing empty segment
+      ".payload", // leading empty segment
+      "payload.items[0",
+      "payload.items0]",
+      "payload.items[-1]",
+      "Error\n    at Object.run (server.js:10:5)", // stack trace
+      "payload with spaces",
+      "x".repeat(257), // excessively long
+      "", // empty
+      "$$", // malformed root
+      "$payload", // root not followed by . or [
+    ]) {
+      expect(
+        ProtocolErrorSchema.safeParse({
+          code: "VALIDATION_ERROR",
+          summary: "The message failed schema validation.",
+          retryable: false,
+          fieldErrors: [fieldError(path)],
+        }).success,
+        JSON.stringify(path),
+      ).toBe(false);
+    }
+  });
+
+  it("makeProtocolError refuses unsafe field paths instead of leaking them", () => {
+    expect(() =>
+      makeProtocolError("VALIDATION_ERROR", "The message failed schema validation.", {
+        fieldErrors: [fieldError("B:\\AI_Agent_folder\\secrets.txt")],
+      }),
+    ).toThrow();
+  });
+
+  it("real parse failures emit $-rooted paths that satisfy the field-path schema", () => {
+    // Nested payload failure → a deep path; array index failure → bracket form.
+    const invalid = {
+      protocolVersion: "1.0",
+      messageId: "msg-100",
+      messageKind: "chat.submit",
+      sentAt: "2026-07-11T09:00:00Z",
+      idempotencyKey: "client-key-0001",
+      payload: {
+        input: { kind: "natural-language", text: "ok" },
+        projectId: "NOT A SLUG",
+      },
+    };
+    const result = parseClientToControlPlaneMessage(invalid);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe("VALIDATION_ERROR");
+      expect(result.error.fieldErrors).toBeDefined();
+      for (const fe of result.error.fieldErrors ?? []) {
+        expect(fe.path.startsWith("$")).toBe(true);
+        expect(
+          ProtocolErrorSchema.safeParse({
+            code: "VALIDATION_ERROR",
+            summary: "re-validating emitted field paths",
+            retryable: false,
+            fieldErrors: [fe],
+          }).success,
+          fe.path,
+        ).toBe(true);
+      }
+    }
+  });
+
+  it("root-level issues are reported at $", () => {
+    const missingEverything = {
+      protocolVersion: "1.0",
+      messageKind: "chat.submit",
+    };
+    const result = parseClientToControlPlaneMessage(missingEverything);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      for (const fe of result.error.fieldErrors ?? []) {
+        expect(fe.path.startsWith("$")).toBe(true);
+      }
+    }
   });
 });

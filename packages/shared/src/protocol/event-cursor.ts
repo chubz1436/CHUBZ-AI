@@ -61,6 +61,7 @@ export type StreamState = z.infer<typeof StreamStateSchema>;
 
 export const RESUME_RESULT_KINDS = Object.freeze([
   "valid",
+  "up-to-date",
   "cursor-ahead",
   "cursor-too-old",
   "unknown-stream",
@@ -73,6 +74,16 @@ export const ResumeResultSchema = z.discriminatedUnion("kind", [
     /** First sequence to deliver: lastConsumedSequence + 1. */
     nextSequence: EventSequenceSchema,
   }),
+  z.strictObject({
+    kind: z.literal("up-to-date"),
+    /**
+     * The head the cursor has fully consumed. Nothing is pending and
+     * there is deliberately NO nextSequence field, so a caught-up
+     * cursor at Number.MAX_SAFE_INTEGER can never produce an unsafe
+     * next sequence (R3).
+     */
+    headSequence: SequenceNumberSchema,
+  }),
   z.strictObject({ kind: z.literal("cursor-ahead"), headSequence: SequenceNumberSchema }),
   z.strictObject({ kind: z.literal("cursor-too-old"), oldestRetainedSequence: EventSequenceSchema }),
   z.strictObject({ kind: z.literal("unknown-stream") }),
@@ -80,11 +91,14 @@ export const ResumeResultSchema = z.discriminatedUnion("kind", [
 export type ResumeResult = z.infer<typeof ResumeResultSchema>;
 
 /**
- * Deterministic resume classification.
+ * Deterministic resume classification. Every returned result is parsed
+ * through ResumeResultSchema, so a result that cannot validate against
+ * its own schema is unrepresentable.
  *
  * Off-by-one contract (tested exhaustively):
- *  - cursor N against head N            → valid, nextSequence N+1 (nothing pending)
- *  - cursor N against head > N          → valid, nextSequence N+1
+ *  - cursor N against head N            → up-to-date (nothing pending; no nextSequence)
+ *  - cursor N against head > N          → valid, nextSequence N+1 (always a safe integer,
+ *                                         since N+1 ≤ head ≤ MAX_SAFE_INTEGER)
  *  - cursor N with N+1 < oldestRetained → cursor-too-old (event N+1 pruned)
  *  - cursor N with N+1 = oldestRetained → valid (exactly resumable)
  *  - cursor N > head                    → cursor-ahead
@@ -94,15 +108,32 @@ export function classifyResume(cursor: StreamCursor, stream: StreamState): Resum
   const parsedStream = StreamStateSchema.parse(stream);
 
   if (parsedCursor.streamId !== parsedStream.streamId) {
-    return { kind: "unknown-stream" };
+    return ResumeResultSchema.parse({ kind: "unknown-stream" });
   }
   if (parsedCursor.lastConsumedSequence > parsedStream.headSequence) {
-    return { kind: "cursor-ahead", headSequence: parsedStream.headSequence };
+    return ResumeResultSchema.parse({
+      kind: "cursor-ahead",
+      headSequence: parsedStream.headSequence,
+    });
+  }
+  if (parsedCursor.lastConsumedSequence === parsedStream.headSequence) {
+    // Caught up — even at Number.MAX_SAFE_INTEGER this branch returns
+    // no next sequence, so no helper can ever emit MAX_SAFE_INTEGER + 1.
+    return ResumeResultSchema.parse({
+      kind: "up-to-date",
+      headSequence: parsedStream.headSequence,
+    });
   }
   if (parsedCursor.lastConsumedSequence + 1 < parsedStream.oldestRetainedSequence) {
-    return { kind: "cursor-too-old", oldestRetainedSequence: parsedStream.oldestRetainedSequence };
+    return ResumeResultSchema.parse({
+      kind: "cursor-too-old",
+      oldestRetainedSequence: parsedStream.oldestRetainedSequence,
+    });
   }
-  return { kind: "valid", nextSequence: parsedCursor.lastConsumedSequence + 1 };
+  return ResumeResultSchema.parse({
+    kind: "valid",
+    nextSequence: parsedCursor.lastConsumedSequence + 1,
+  });
 }
 
 export const EVENT_CLASSIFICATIONS = Object.freeze([
