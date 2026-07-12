@@ -14,7 +14,7 @@ import {
 } from "./common.js";
 import { ProtocolErrorSchema, parseEnvelopeWith, type EnvelopeParseResult } from "./errors.js";
 import { EventSequenceSchema, StreamCursorSchema } from "./event-cursor.js";
-import { canonicalizeMutatingEnvelopeForDigest } from "./idempotency.js";
+import { canonicalizeMutatingEnvelopeForDigest } from "./digest-internal.js";
 
 /**
  * Client ↔ Control Plane protocol contracts (M1B, D-023).

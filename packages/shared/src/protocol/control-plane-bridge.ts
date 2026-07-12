@@ -11,7 +11,7 @@ import {
   requireConsistentIdentity,
 } from "./common.js";
 import { parseEnvelopeWith, type EnvelopeParseResult } from "./errors.js";
-import { canonicalizeMutatingEnvelopeForDigest } from "./idempotency.js";
+import { canonicalizeMutatingEnvelopeForDigest } from "./digest-internal.js";
 
 /**
  * Control Plane ↔ Local Bridge protocol contracts (M1B, D-023; hardened

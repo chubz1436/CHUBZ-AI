@@ -6,13 +6,17 @@ import {
   REPLAY_CLASSIFICATIONS,
   canonicalizeBridgeCommandForDigest,
   canonicalizeClientMutationForDigest,
-  canonicalizeForDigest,
   classifyDelivery,
   scopeKey,
   type IdempotencyScope,
   type IncomingDelivery,
   type RecordedIdempotency,
 } from "../../src/index.js";
+// The low-level canonicalizer is INTERNAL (R2 export-boundary patch): it
+// is not part of the public package API, so its behavioral tests reach
+// into the internal module directly. Public-surface tests live in
+// export-boundary.test.ts.
+import { canonicalizeForDigest } from "../../src/protocol/digest-internal.js";
 
 const digestA = `sha256:${"a".repeat(64)}`;
 const digestB = `sha256:${"b".repeat(64)}`;
