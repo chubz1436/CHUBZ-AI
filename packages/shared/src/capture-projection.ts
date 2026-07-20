@@ -69,26 +69,31 @@ const AutomatedSnapshotProvenanceSchema = z.strictObject({ mode: z.literal("auto
 const ManualSnapshotProvenanceSchema = z.strictObject({ mode: z.literal("owner-attested"), connectorType: z.literal("manual-relay"), workerId: SlugIdSchema });
 const SnapshotProvenanceSchema = z.discriminatedUnion("mode", [AutomatedSnapshotProvenanceSchema, ManualSnapshotProvenanceSchema]);
 type SnapshotProvenance = z.infer<typeof SnapshotProvenanceSchema>;
-const hasIndependentActorProvenance = (source: SnapshotProvenance, actor: SnapshotProvenance): boolean => {
-  if (source.workerId === actor.workerId || source.connectorType === actor.connectorType) return false;
-  if (source.mode === "automated" && actor.mode === "automated") {
-    if (source.adapterId === actor.adapterId) return false;
-    if (source.adapterRunId !== null && source.adapterRunId === actor.adapterRunId) return false;
-  }
-  return true;
-};
+type AutomatedSnapshotProvenance = z.infer<typeof AutomatedSnapshotProvenanceSchema>;
 const SnapshotSubjectSchema = z.strictObject({
   taskId: SafeIdSchema, attemptId: SafeIdSchema, operationId: OptionalId, artifactId: SafeIdSchema, captureId: SafeIdSchema,
   reviewId: OptionalId, contentHash: HashSchema, sourceProvenance: SnapshotProvenanceSchema,
 });
 type SnapshotSubject = z.infer<typeof SnapshotSubjectSchema>;
 const ObservationSourceSchema = z.enum(["connector", "adapter", "runtime"]);
-const TrustedObservationSchema = z.strictObject({ evidenceId: EvidenceRefSchema, kind: z.literal("observed"), subject: SnapshotSubjectSchema, observerId: SafeIdSchema, observerProvenance: SnapshotProvenanceSchema, observationMethod: ObservationSourceSchema }).superRefine((v, ctx) => {
+type ObservationSource = z.infer<typeof ObservationSourceSchema>;
+/** One matrix for automated observations, validations, and quota evidence. Manual relay is never compatible. */
+const hasCompatibleAutomatedActor = (source: SnapshotProvenance, actor: AutomatedSnapshotProvenance, method: ObservationSource): boolean => {
+  if (source.mode !== "automated") return false;
+  if (source.workerId === actor.workerId || source.connectorType === actor.connectorType || source.adapterId === actor.adapterId) return false;
+  if (source.adapterRunId !== null && source.adapterRunId === actor.adapterRunId) return false;
+  switch (method) {
+    case "connector": return AutomatedConnectorSchema.safeParse(actor.connectorType).success;
+    case "adapter": return SafeIdSchema.safeParse(actor.adapterId).success;
+    case "runtime": return actor.adapterRunId !== null;
+  }
+};
+const TrustedObservationSchema = z.strictObject({ evidenceId: EvidenceRefSchema, kind: z.literal("observed"), subject: SnapshotSubjectSchema, observerId: SafeIdSchema, observerProvenance: AutomatedSnapshotProvenanceSchema, observationMethod: ObservationSourceSchema }).superRefine((v, ctx) => {
   if (v.subject.reviewId !== null) ctx.addIssue({ code: "custom", path: ["subject", "reviewId"], message: "capture observations cannot be review-scoped" });
-  if (!hasIndependentActorProvenance(v.subject.sourceProvenance, v.observerProvenance)) ctx.addIssue({ code: "custom", path: ["observerProvenance"], message: "observer provenance must be independent from capture provenance" });
+  if (!hasCompatibleAutomatedActor(v.subject.sourceProvenance, v.observerProvenance, v.observationMethod)) ctx.addIssue({ code: "custom", path: ["observerProvenance"], message: "observer provenance must be compatible independent automation" });
 });
-const TrustedValidationSchema = z.strictObject({ evidenceId: EvidenceRefSchema, kind: z.literal("validated"), subject: SnapshotSubjectSchema, validatorId: SafeIdSchema, validatorProvenance: SnapshotProvenanceSchema, validationSource: ObservationSourceSchema, validatedCaptureId: SafeIdSchema, validationResult: z.enum(["passed", "failed", "inconclusive"]) }).superRefine((v, ctx) => {
-  if (!hasIndependentActorProvenance(v.subject.sourceProvenance, v.validatorProvenance)) ctx.addIssue({ code: "custom", path: ["validatorProvenance"], message: "validator provenance must be independent from capture provenance" });
+const TrustedValidationSchema = z.strictObject({ evidenceId: EvidenceRefSchema, kind: z.literal("validated"), subject: SnapshotSubjectSchema, validatorId: SafeIdSchema, validatorProvenance: AutomatedSnapshotProvenanceSchema, validationSource: ObservationSourceSchema, validatedCaptureId: SafeIdSchema, validationResult: z.enum(["passed", "failed", "inconclusive"]) }).superRefine((v, ctx) => {
+  if (!hasCompatibleAutomatedActor(v.subject.sourceProvenance, v.validatorProvenance, v.validationSource)) ctx.addIssue({ code: "custom", path: ["validatorProvenance"], message: "validator provenance must be compatible independent automation" });
 });
 const TrustedManualImportSchema = z.strictObject({ evidenceId: EvidenceRefSchema, kind: z.literal("manual-import"), subject: SnapshotSubjectSchema, ownerAttestationId: SafeIdSchema, importMode: z.literal("reviewed-artifact-import") }).refine((v) => v.subject.reviewId === null && v.subject.sourceProvenance.mode === "owner-attested", "manual imports must bind owner-attested artifact provenance");
 const TrustedProducerSchema = z.strictObject({ evidenceId: EvidenceRefSchema, kind: z.literal("producer"), subject: SnapshotSubjectSchema, producerCaptureId: SafeIdSchema }).refine((v) => v.subject.reviewId === null, "producer evidence cannot be review-scoped");
@@ -230,8 +235,8 @@ export function evaluateCaptureTrust(rawCapture: unknown, rawAuthoritativeSnapsh
     const evidence = resolveEvidence(snapshot.value, value.evidenceRef);
     if (!evidence) return fail("UNTRUSTED_REFERENCE");
     if (!sameSubject(evidence, snapshotSubjectForCapture(value))) return fail("SUBJECT_MISMATCH");
-    if (value.evidenceClass === "observation-request") return evidence.kind === "observed" && evidence.observerId === value.requestedObserverId && evidence.observationMethod === value.observationMethod && evidence.observerId !== value.provenance.workerId ? trust("observed") : fail("UNTRUSTED_REFERENCE");
-    if (value.evidenceClass === "validation-request") return evidence.kind === "validated" && evidence.validatorId === value.requestedValidatorId && evidence.validatedCaptureId === value.validatedCaptureId && evidence.validationResult === "passed" && value.validationResult === "passed" && evidence.validatorId !== value.provenance.workerId ? trust("validated") : fail("UNTRUSTED_REFERENCE");
+    if (value.evidenceClass === "observation-request") return evidence.kind === "observed" && hasCompatibleAutomatedActor(evidence.subject.sourceProvenance, evidence.observerProvenance, evidence.observationMethod) && evidence.observerId === value.requestedObserverId && evidence.observationMethod === value.observationMethod && evidence.observerId !== value.provenance.workerId ? trust("observed") : fail("UNTRUSTED_REFERENCE");
+    if (value.evidenceClass === "validation-request") return evidence.kind === "validated" && hasCompatibleAutomatedActor(evidence.subject.sourceProvenance, evidence.validatorProvenance, evidence.validationSource) && evidence.validatorId === value.requestedValidatorId && evidence.validatedCaptureId === value.validatedCaptureId && evidence.validationResult === "passed" && value.validationResult === "passed" && evidence.validatorId !== value.provenance.workerId ? trust("validated") : fail("UNTRUSTED_REFERENCE");
     return evidence.kind === "manual-import" && evidence.importMode === "reviewed-artifact-import" ? trust("owner-attested") : fail("UNTRUSTED_REFERENCE");
   } catch { return Object.freeze({ ok: false, code: "MALFORMED_INPUT" }); }
 }
@@ -255,8 +260,8 @@ export function evaluateArtifactTrust(rawArtifact: unknown, rawAuthoritativeSnap
     if (observation.policyId !== policy.policyId || observation.policyVersion !== policy.policyVersion || observation.taskId !== value.taskId || observation.attemptId !== value.attemptId || observation.operationId !== value.operationId || observation.artifactId !== value.artifactId || observation.contentHash !== value.contentHash || observation.artifactBytes !== value.byteLength) return fail("SUBJECT_MISMATCH");
     const observationSubject = { taskId: observation.taskId, attemptId: observation.attemptId, operationId: observation.operationId, artifactId: observation.artifactId, captureId: observation.captureId, reviewId: null, contentHash: observation.contentHash, sourceProvenance: observationEvidence.subject.sourceProvenance } satisfies SnapshotSubject;
     if (!sameSubject(observationEvidence, observationSubject)) return fail("SUBJECT_MISMATCH");
-    if (observation.confidence === "observed" && !(observationEvidence.kind === "observed" && observationEvidence.observationMethod === observation.source)) return fail("UNTRUSTED_REFERENCE");
-    if (observation.confidence === "validated" && !(observationEvidence.kind === "validated" && observationEvidence.validationResult === "passed" && observationEvidence.validationSource === observation.source)) return fail("UNTRUSTED_REFERENCE");
+    if (observation.confidence === "observed" && !(observationEvidence.kind === "observed" && hasCompatibleAutomatedActor(observationEvidence.subject.sourceProvenance, observationEvidence.observerProvenance, observationEvidence.observationMethod) && observationEvidence.observationMethod === observation.source)) return fail("UNTRUSTED_REFERENCE");
+    if (observation.confidence === "validated" && !(observationEvidence.kind === "validated" && hasCompatibleAutomatedActor(observationEvidence.subject.sourceProvenance, observationEvidence.validatorProvenance, observationEvidence.validationSource) && observationEvidence.validationResult === "passed" && observationEvidence.validationSource === observation.source)) return fail("UNTRUSTED_REFERENCE");
     const exceeded = observation.artifactBytes > policy.perArtifactLimitBytes || observation.taskBytes > policy.taskLimitBytes;
     if (value.state === "complete" && exceeded) return fail("SUBJECT_MISMATCH");
     const quotaOutcome: "within-limit" | "partial-capture" | "quota-exceeded" = exceeded ? "quota-exceeded" : value.state === "complete" ? "within-limit" : "partial-capture";
@@ -288,7 +293,7 @@ export function evaluateReviewPackageManifestTrust(rawManifest: unknown, rawAuth
       const validation = resolveEvidence(snapshot.value, claim.evidenceRef);
       if (!artifact || !validation) return fail("UNTRUSTED_REFERENCE");
       const subject = { taskId: value.taskId, attemptId: value.attemptId, operationId: value.operationId, artifactId: claim.artifactId, captureId: claim.validationCaptureId, reviewId: value.reviewId, contentHash: artifact.contentHash, sourceProvenance: toSnapshotProvenance(value.provenance) } satisfies SnapshotSubject;
-      if (validation.kind !== "validated" || !sameSubject(validation, subject)) return fail("SUBJECT_MISMATCH");
+      if (validation.kind !== "validated" || !sameSubject(validation, subject) || !hasCompatibleAutomatedActor(validation.subject.sourceProvenance, validation.validatorProvenance, validation.validationSource)) return fail("SUBJECT_MISMATCH");
       if (validation.validatedCaptureId !== claim.validatedCaptureId || validation.validationResult !== claim.result || validation.validatorId === value.provenance.workerId) return fail("UNTRUSTED_REFERENCE");
     }
     return manifest;

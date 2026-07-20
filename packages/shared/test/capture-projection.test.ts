@@ -18,6 +18,7 @@ const hash = `sha256:${"a".repeat(64)}`;
 const otherHash = `sha256:${"b".repeat(64)}`;
 const automated = { mode: "automated", connectorType: "cli-headless", workerId: "codex", adapterId: "adapter-1", adapterVersion: "v1", adapterRunId: "run-1", executableId: "codex-cli", executableVersion: "v1", executableHash: null, runtime: "node", invocationMode: "headless", authenticationMode: "owner-managed", structuredOutput: true, isolation: "not-attested" } as const;
 const manual = { mode: "owner-attested", connectorType: "manual-relay", workerId: "reviewer", importMode: "reviewed-artifact-import", ownerAttestedAt: "2026-07-20T00:00:00Z", guarantees: { cryptographicIdentity: false, commandCapture: false, processSupervision: false, filesystemEnforcement: false } } as const;
+const manualActor = { mode: "owner-attested", connectorType: "manual-relay", workerId: "manual-reviewer" } as const;
 const sourceProvenance = { mode: "automated", connectorType: "cli-headless", workerId: "codex", adapterId: "adapter-1", adapterRunId: "run-1" } as const;
 const observerProvenance = { mode: "automated", connectorType: "browser-controlled", workerId: "bridge-worker", adapterId: "bridge-adapter", adapterRunId: "bridge-run" } as const;
 const validatorProvenance = { mode: "automated", connectorType: "http-api", workerId: "validator-worker", adapterId: "validator-adapter", adapterRunId: "validator-run" } as const;
@@ -74,8 +75,16 @@ describe("M1E claim and authoritative-snapshot boundary", () => {
     expect(parseAuthoritativeM1ESnapshotShape(withEvidence({ ...context.evidence[0], observerProvenance: { ...observerProvenance, adapterId: "adapter-1" } }))).toMatchObject({ ok: false });
     expect(parseAuthoritativeM1ESnapshotShape(withEvidence({ ...context.evidence[0], observerProvenance: { ...observerProvenance, adapterRunId: "run-1" } }))).toMatchObject({ ok: false });
     expect(parseAuthoritativeM1ESnapshotShape(withEvidence({ ...context.evidence[0], observerProvenance: undefined }))).toMatchObject({ ok: false });
+    for (const source of ["connector", "adapter", "runtime"] as const) {
+      expect(parseAuthoritativeM1ESnapshotShape(withEvidence({ ...context.evidence[0], observerProvenance: manualActor, observationMethod: source }))).toMatchObject({ ok: false });
+      expect(parseAuthoritativeM1ESnapshotShape({ ...context, evidence: [context.evidence[0], { ...context.evidence[1], validatorProvenance: manualActor, validationSource: source }, ...context.evidence.slice(2)] })).toMatchObject({ ok: false });
+    }
+    expect(parseAuthoritativeM1ESnapshotShape(withEvidence({ ...context.evidence[0], observationMethod: "runtime", observerProvenance: { ...observerProvenance, adapterRunId: null } }))).toMatchObject({ ok: false });
+    expect(parseAuthoritativeM1ESnapshotShape({ ...context, evidence: [context.evidence[0], { ...context.evidence[1], validationSource: "runtime", validatorProvenance: { ...validatorProvenance, adapterRunId: null } }, ...context.evidence.slice(2)] })).toMatchObject({ ok: false });
     expect(parseAuthoritativeM1ESnapshotShape({ ...context, evidence: [{ ...context.evidence[0], evidenceId: "conflicting-actor", observerProvenance: { ...observerProvenance, workerId: "other-observer" } }, ...context.evidence] })).toMatchObject({ ok: false });
     expect(parseAuthoritativeM1ESnapshotShape({ ...context, evidence: [context.evidence[0], { ...context.evidence[1], validatorProvenance: { ...validatorProvenance, workerId: "codex" } }, ...context.evidence.slice(2)] })).toMatchObject({ ok: false });
+    expect(evaluateCaptureTrust({ ...observationRequest, observationMethod: "connector" }, { ...context, evidence: [{ ...context.evidence[0], observationMethod: "connector" }, ...context.evidence.slice(1)] })).toEqual({ ok: true, value: { trust: "observed" } });
+    expect(evaluateCaptureTrust(validationRequest, { ...context, evidence: [context.evidence[0], { ...context.evidence[1], validationSource: "runtime" }, ...context.evidence.slice(2)] })).toEqual({ ok: true, value: { trust: "validated" } });
   });
 
   it("parses an authoritative snapshot shape without treating parser success as authority and rejects conflicts", () => {
@@ -115,6 +124,7 @@ describe("M1E artifact, inclusion, and quota truth", () => {
     expect(evaluateArtifactTrust(artifact, { ...context, quotaObservations: [{ ...validatedObservation, confidence: "observed" }] })).toMatchObject({ ok: false, code: "UNTRUSTED_REFERENCE" });
     expect(evaluateArtifactTrust(artifact, { ...context, quotaObservations: [{ ...context.quotaObservations[0], source: "runtime" }] })).toMatchObject({ ok: false, code: "UNTRUSTED_REFERENCE" });
     expect(evaluateArtifactTrust(artifact, { ...context, quotaObservations: [{ ...validatedObservation, source: "runtime" }] })).toMatchObject({ ok: false, code: "UNTRUSTED_REFERENCE" });
+    expect(evaluateArtifactTrust(artifact, { ...context, evidence: [context.evidence[0], { ...context.evidence[1], validatorProvenance: manualActor }, ...context.evidence.slice(2)], quotaObservations: [validatedObservation] })).toMatchObject({ ok: false });
   });
 
   it("requires review-scoped inclusion that is distinct from producer evidence", () => {
