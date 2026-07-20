@@ -20,6 +20,8 @@ import type { ParsedMutatingEnvelope as _NotExportedFromBarrel } from "../../src
 const UNSAFE_LOW_LEVEL_EXPORTS = [
   "canonicalizeMutatingEnvelopeForDigest",
   "canonicalizeForDigest",
+  "grantAuthenticationPayload",
+  "verifyGrantAuthentication",
 ] as const;
 
 const rawChatSubmit = (extra: Record<string, unknown> = {}) => ({
@@ -89,6 +91,16 @@ describe("digest export boundary (R2 patch)", () => {
     ).toBe(true);
     expect(sharedRoot.IncomingDeliverySchema).toBeDefined();
     expect(sharedRoot.RecordedIdempotencySchema).toBeDefined();
+  });
+
+  it("exports the intentional M1C approval-security surface", () => {
+    expect(sharedRoot.ApprovalActionSchema).toBeDefined();
+    expect(sharedRoot.CapabilityGrantSchema).toBeDefined();
+    expect(sharedRoot.ApprovalProofChallengeSchema).toBeDefined();
+    expect(typeof sharedRoot.parseApprovalAction).toBe("function");
+    expect(typeof sharedRoot.digestApprovalAction).toBe("function");
+    expect(typeof sharedRoot.verifyCapabilityGrant).toBe("function");
+    expect(typeof sharedRoot.verifyApprovalProofBinding).toBe("function");
   });
 
   it("valid client and Bridge mutations still canonicalize through the public helpers", () => {

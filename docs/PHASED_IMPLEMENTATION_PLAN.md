@@ -1,6 +1,6 @@
 # Phased Implementation Plan
 
-> **STATUS: ACCEPTED PLAN — M1A/M1B CONTRACTS COMPLETE; M1C AND RUNTIME IMPLEMENTATION NOT STARTED**
+> **STATUS: ACCEPTED PLAN — M1A/M1B CONTRACTS COMPLETE; M1C APPROVAL-SECURITY CONTRACTS ACTIVE ON `task/m1c-approval-security-contracts`; RUNTIME IMPLEMENTATION NOT STARTED**
 >
 > Author: Claude Code / BUNSO (Fable 5), per accepted decision D-005; implementation-worker assignment amended by D-019.
 > Date: 2026-07-10. Revised following Bantay's required revisions R1–R7.
@@ -16,7 +16,7 @@ Worker roles throughout (D-005, D-019, D-027): **Codex** is the current primary 
 >
 > **M1A STATUS: COMPLETED AND MERGED INTO `main`.** Implementation, Bantay review, and Codex independent verification completed; owner approval completed; fast-forward merge into `main` completed.
 >
-> **M1B STATUS: COMPLETED AND MERGED (D-023).** The pure protocol contracts are present in `main` through `2dc6a12`. **M1C remains not started and unauthorized.** Pilot-project selection and Obsidian-vault location are deferred inputs, not blockers.
+> **M1B STATUS: COMPLETED AND MERGED (D-023).** The pure protocol contracts are present in `main` through `2dc6a12`. **M1C is active under explicit owner GO on `task/m1c-approval-security-contracts`, pending Bantay/owner review and not yet accepted.** Pilot-project selection and Obsidian-vault location are deferred inputs, not blockers.
 
 **Objective:** convert this design package into owner-accepted decisions and verify the PC is actually ready — without writing application code.
 
@@ -55,7 +55,7 @@ Performed by **Antigravity** (read-only and trivially reversible checks), comple
 **Tests:** none (no code).
 **Risks:** design churn delaying start → time-box review to one round plus one revision. Phase 0B may invalidate connector assumptions (U-1/U-2); that is its purpose, and manual relay absorbs the outcome.
 **Rollback:** none needed — documents only.
-**STOP POINT (status aligned 2026-07-20):** M1A and M1B are completed and merged into `main`. **M1C remains not started and unauthorized** with its own GO required. The active batch is documentation alignment only; owner/Bantay review follows it before any implementation authorization.
+**STOP POINT (status aligned 2026-07-20):** M1A and M1B are completed and merged into `main`. **M1C is active under explicit owner GO but remains unaccepted pending Bantay/owner review.** M1D, M1E, M1F, and M2 are not started; no next milestone is authorized automatically.
 
 **Historical implementation evidence:** A separate BUNSO repository-backed Codex experiment is recorded in [BUNSO_EXPERIMENT_ADOPTION_PLAN.md](architecture/BUNSO_EXPERIMENT_ADOPTION_PLAN.md). Its compatible behavior may be selectively reimplemented only through the existing M1C–M1F and runtime milestone gates; it does not authorize a merge, cherry-pick, replacement, or earlier milestone start.
 
@@ -190,11 +190,11 @@ Performed by **Antigravity** (read-only and trivially reversible checks), comple
 
 ---
 
-## First Implementation Tasks — Bounded Split `ACCEPTED — M1A/M1B COMPLETE; M1C NOT STARTED`
+## First Implementation Tasks — Bounded Split `ACCEPTED — M1A/M1B COMPLETE; M1C ACTIVE`
 
 The former single `packages/shared` task is split into six bounded subtasks. **The assigned implementation worker receives exactly one subtask at a time, each dispatched only after owner approval of the previous one's review.** Codex is the current primary implementation worker; BUNSO remains the governing architecture source and may be assigned only with explicit owner direction. No two workers edit the same files concurrently. All M1 subtasks are pure library code — no network, no filesystem side effects, no framework.
 
-Status (aligned 2026-07-20): Phase 0B completed with a conditional pass and owner review. **M1A Core Contracts and M1B Protocol Contracts are completed and merged into `main`.** **M1C remains not started and unauthorized**; it requires its own explicit owner GO.
+Status (aligned 2026-07-20): Phase 0B completed with a conditional pass and owner review. **M1A Core Contracts and M1B Protocol Contracts are completed and merged into `main`.** **M1C is active on `task/m1c-approval-security-contracts` under explicit owner GO, but not complete or accepted; Bantay/owner review is required before any next milestone.**
 
 - **M1A — Core contracts:** task states and the legal-transition table (FINAL_ARCHITECTURE_DESIGN.md §10, including `BLOCKED` reason codes), the twelve-command grammar, and the worker manifest schema (§8.3). **Unit tests only** — every legal transition accepted, every illegal transition rejected.
 - **M1B — Protocol contracts:** client↔Control-Plane and Control-Plane↔Bridge message envelopes, idempotency keys, event cursors. **Unit tests only.**
@@ -207,7 +207,7 @@ M1F freezes the coordination boundary before runtime orchestration. Its acceptan
 
 ### M1C GO prerequisites
 
-M1C may begin only after the owner records an explicit M1C GO that names its bounded scope and assignee, confirms the M1B merge evidence, confirms no concurrent worker holds the same files, and requires Bantay review before the next milestone. The GO does not authorize M1D, M1E, M1F, runtime code, adapter work, remote access, production access, merge, or deployment.
+The M1C owner GO names its bounded scope and Codex assignment, confirms M1B merge evidence and a clean non-concurrent workspace, and requires Bantay review before the next milestone. The GO does not authorize M1D, M1E, M1F, runtime code, adapter work, remote access, production access, merge, or deployment.
 
 ---
 
@@ -217,7 +217,7 @@ M1C may begin only after the owner records an explicit M1C GO that names its bou
 |---|---|---|
 | 0A | Owner GO on this package post-Bantay review — **granted** | Decisions resolved — **completed** |
 | 0B | Phase 0A complete — **entered** | Antigravity validation executed and U-1/U-2 answered, then owner reviews the report — **completed, conditional pass** |
-| 1 | Phase 0B passed, owner reviewed the validation report, and each bounded M1 task has its own GO — **M1A and M1B are merged into `main`; M1C is not started and needs its own GO; M1F follows M1E before M2** | Live demo + acceptance list + security reviews |
+| 1 | Phase 0B passed, owner reviewed the validation report, and each bounded M1 task has its own GO — **M1A and M1B are merged into `main`; M1C is active under explicit owner GO and awaits Bantay/owner review; M1F follows M1E before M2** | Live demo + acceptance list + security reviews |
 | 2 | Owner GO | §18 checklist evidenced; explicit remote-enable decision |
 | 3 | Owner GO | Adapter contract suite green per adapter |
 | 4 | Owner GO | Concurrency + hardening acceptance tests |
