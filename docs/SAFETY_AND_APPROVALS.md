@@ -1,6 +1,6 @@
 # Safety and Approvals
 
-> **STATUS: POLICY REFERENCE — M1A/M1B/M1C CONTRACTS ACCEPTED AND MERGED; RUNTIME NOT YET IMPLEMENTED**
+> **STATUS: POLICY REFERENCE — M1A-M1D CONTRACTS ACCEPTED AND MERGED; M1E PURE CONTRACT WORK ACTIVE AND UNACCEPTED; RUNTIME NOT YET IMPLEMENTED**
 
 The command center is planned around least privilege, visible intent, task isolation, and owner-controlled escalation.
 

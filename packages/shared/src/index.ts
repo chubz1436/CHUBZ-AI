@@ -8,7 +8,9 @@
  * no I/O of any kind. M1C adds approval-security contracts: bounded
  * approval actions, action hashing, capability grants, and Phase 2
  * proof bindings. Runtime authorization, storage, and transport remain
- * outside this package.
+ * outside this package. M1E adds pure capture, artifact, projection, and
+ * review-package contracts; it does not perform runtime capture, storage,
+ * filesystem, archive, Bridge, adapter, or network work.
  */
 export * from "./task-states.js";
 export * from "./task-transitions.js";
@@ -17,3 +19,4 @@ export * from "./worker-manifest.js";
 export * from "./protocol/index.js";
 export * from "./approval-security.js";
 export * from "./redaction.js";
+export * from "./capture-projection.js";

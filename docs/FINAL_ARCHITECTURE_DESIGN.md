@@ -1,6 +1,6 @@
 # Final Architecture Design
 
-> **STATUS: ACCEPTED ARCHITECTURE (decisions D-006 … D-027) — M1A/M1B CONTRACTS MERGED; RUNTIME NOT YET IMPLEMENTED**
+> **STATUS: ACCEPTED ARCHITECTURE (decisions D-006 … D-032) — M1A-M1D CONTRACTS ACCEPTED; M1E PURE CONTRACT WORK ACTIVE AND UNACCEPTED; RUNTIME NOT YET IMPLEMENTED**
 >
 > Author: Claude Code / BUNSO (Fable 5), lead and final designer per accepted decision D-005.
 > Date: 2026-07-10. Revised following Bantay's required revisions R1–R7; accepted by Kenneth / CHUBZ the same day.
