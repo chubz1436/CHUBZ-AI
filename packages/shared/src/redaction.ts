@@ -105,6 +105,48 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-
 const HEX_HASH_RE = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i;
 const entropy = (value: string): number => { const counts = new Map<string, number>(); for (const char of value) counts.set(char, (counts.get(char) ?? 0) + 1); let result = 0; for (const count of counts.values()) { const p = count / value.length; result -= p * Math.log2(p); } return result; };
 const isEntropyCandidate = (value: string, policy: RedactionPolicy): boolean => value.length >= policy.entropy.minLength && value.length <= policy.entropy.maxLength && /^[A-Za-z0-9_+\/-]+$/.test(value) && !UUID_RE.test(value) && !HEX_HASH_RE.test(value) && entropy(value) >= policy.entropy.minBitsPerCharacter;
+const ASSIGNMENT_HEAD_RE = /\b(?:api[_-]?key|access[_-]?token|refresh[_-]?token|webhook[_-]?secret|password|secret)\s*[:=]\s*/gi;
+
+const lineEnd = (text: string, start: number): number => {
+  const lf = text.indexOf("\n", start);
+  const cr = text.indexOf("\r", start);
+  if (lf === -1) return cr === -1 ? text.length : cr;
+  return cr === -1 ? lf : Math.min(lf, cr);
+};
+
+/**
+ * Returns the end of one assignment value. Quoted values consume their
+ * matching quote, respecting a backslash escape. An unclosed quote masks the
+ * remainder of its physical line. A trailing backslash explicitly continues a
+ * quoted value across LF or CRLF; the scan is linear and bounded by input size.
+ */
+const assignmentEnd = (text: string, start: number): number => {
+  const first = text[start];
+  if (first === "\"" || first === "'") {
+    for (let index = start + 1; index < text.length; index += 1) {
+      const char = text[index]!;
+      if (char === "\\") {
+        if (text[index + 1] === "\r" && text[index + 2] === "\n") index += 2;
+        else index += 1;
+        continue;
+      }
+      if (char === first) return index + 1;
+      if (char === "\r" || char === "\n") return index;
+    }
+    return text.length;
+  }
+  let end = start;
+  while (end < text.length && !/[\s,;#]/.test(text[end]!)) end += 1;
+  return end;
+};
+
+const isSurrogateSplit = (text: string, boundary: number): boolean =>
+  boundary > 0 &&
+  boundary < text.length &&
+  text.charCodeAt(boundary - 1) >= 0xd800 &&
+  text.charCodeAt(boundary - 1) <= 0xdbff &&
+  text.charCodeAt(boundary) >= 0xdc00 &&
+  text.charCodeAt(boundary) <= 0xdfff;
 
 /** Detects bounded known shapes plus conservative token-like entropy candidates. */
 export function detectRedactions(rawText: unknown, rawPolicy: unknown = DEFAULT_REDACTION_POLICY): RedactionParseResult<readonly RedactionFinding[]> {
@@ -117,11 +159,17 @@ export function detectRedactions(rawText: unknown, rawPolicy: unknown = DEFAULT_
   const patterns: readonly [RegExp, RedactionCategory, RedactionConfidence][] = [
     [/-----BEGIN (?:[A-Z0-9 ]+ )?PRIVATE KEY-----[\s\S]{0,16384}?-----END (?:[A-Z0-9 ]+ )?PRIVATE KEY-----/g, "private-key", "high"],
     [/(?:authorization\s*:\s*(?:bearer|basic)\s+)[^\s,;]{8,}/gi, "authorization", "high"],
-    [/\b(?:api[_-]?key|access[_-]?token|refresh[_-]?token|webhook[_-]?secret|password|secret)\s*[:=]\s*["']?[^\s"';,]{8,}/gi, "token-assignment", "medium"],
     [/[A-Za-z][A-Za-z0-9+.-]*:\/\/[^\s/:@]+:[^\s@/]+@[^\s/]+/g, "connection-credential", "high"],
     [/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/g, "jwt", "medium"],
   ];
   for (const [re, category, confidence] of patterns) { re.lastIndex = 0; let match: RegExpExecArray | null; while ((match = re.exec(rawText)) !== null) { if (!add(findings, match.index, match.index + match[0].length, category, "pattern", confidence, policy.maxFindings)) return fail("TOO_MANY_FINDINGS", "The redaction finding limit was reached."); } }
+  ASSIGNMENT_HEAD_RE.lastIndex = 0;
+  let assignment: RegExpExecArray | null;
+  while ((assignment = ASSIGNMENT_HEAD_RE.exec(rawText)) !== null) {
+    const end = assignmentEnd(rawText, ASSIGNMENT_HEAD_RE.lastIndex);
+    if (end > assignment.index && !add(findings, assignment.index, end, "token-assignment", "pattern", "medium", policy.maxFindings)) return fail("TOO_MANY_FINDINGS", "The redaction finding limit was reached.");
+    ASSIGNMENT_HEAD_RE.lastIndex = Math.max(ASSIGNMENT_HEAD_RE.lastIndex, end);
+  }
   if (policy.entropy.enabled) { const candidates = /[A-Za-z0-9_+\/-]{24,256}/g; let match: RegExpExecArray | null; while ((match = candidates.exec(rawText)) !== null) { if (isEntropyCandidate(match[0], policy) && !add(findings, match.index, match.index + match[0].length, "entropy-candidate", "entropy", "candidate", policy.maxFindings)) return fail("TOO_MANY_FINDINGS", "The redaction finding limit was reached."); } }
   return Object.freeze({ ok: true, value: Object.freeze(findings) });
 }
@@ -136,7 +184,7 @@ export function redactText(rawText: unknown, rawFindings: unknown, rawPolicy: un
   let policy: RedactionPolicy; let parsedFindings: RedactionFinding[];
   try { const parsedPolicy = RedactionPolicySchema.safeParse(rawPolicy); if (!parsedPolicy.success) return fail("MALFORMED_INPUT", "The redaction input is invalid."); policy = parsedPolicy.data; const parsed = z.array(RedactionFindingSchema).max(policy.maxFindings).safeParse(rawFindings); if (!parsed.success) return fail("INVALID_OFFSETS", "The redaction findings are invalid."); parsedFindings = parsed.data; } catch { return fail("MALFORMED_INPUT", "The redaction input is invalid."); }
   if (rawText.length > policy.maxInputChars) return fail("INPUT_TOO_LARGE", "The redaction input exceeds the configured limit.");
-  if (parsedFindings.some((item) => item.end > rawText.length)) return fail("INVALID_OFFSETS", "The redaction findings are invalid.");
+  if (parsedFindings.some((item) => item.end > rawText.length || isSurrogateSplit(rawText, item.start) || isSurrogateSplit(rawText, item.end))) return fail("INVALID_OFFSETS", "The redaction findings are invalid.");
   const sorted = [...parsedFindings].sort((a, b) => a.start - b.start || b.end - a.end || a.category.localeCompare(b.category));
   const spans: Array<{ start: number; end: number; categories: RedactionCategory[] }> = [];
   for (const item of sorted) { const previous = spans.at(-1); if (previous && item.start <= previous.end) { previous.end = Math.max(previous.end, item.end); if (!previous.categories.includes(item.category)) previous.categories.push(item.category); } else spans.push({ start: item.start, end: item.end, categories: [item.category] }); }

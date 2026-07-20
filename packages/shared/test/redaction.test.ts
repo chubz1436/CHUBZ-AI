@@ -59,6 +59,76 @@ describe("M1D detectors and redaction", () => {
     expect(again).toEqual({ ok: true, value: { text: result.value.text, count: 0, categories: [] } });
   });
 
+  it("fully redacts quoted assignments, escapes, adjacent values, and preserves comments", () => {
+    const fixtures = [
+      "password=\"synthetic value, punctuation; # remains secret\"",
+      "secret='synthetic value, punctuation; # remains secret'",
+      "password=\"synthetic escaped \\\"quote\\\" value\"",
+      "password=synthetic-unquoted-value # harmless comment",
+      "password=synthetic-first-value api_key=\"synthetic second value\"",
+    ];
+    for (const input of fixtures) {
+      const detected = detectRedactions(input);
+      expect(detected.ok).toBe(true);
+      if (!detected.ok) continue;
+      const redacted = redactText(input, detected.value);
+      expect(redacted.ok).toBe(true);
+      if (!redacted.ok) continue;
+      expect(redacted.value.text).not.toContain("synthetic");
+      expect(JSON.stringify(redacted.value)).not.toContain("synthetic");
+    }
+    const withComment = "password=synthetic-unquoted-value # harmless comment";
+    const detected = detectRedactions(withComment);
+    if (detected.ok) expect(redactText(withComment, detected.value)).toMatchObject({ ok: true, value: { text: "[REDACTED:token-assignment] # harmless comment" } });
+    expect(detectRedactions("A password should remain ordinary prose.")).toEqual({ ok: true, value: [] });
+  });
+
+  it("fails closed to the physical line boundary for unclosed quoted assignments", () => {
+    for (const input of [
+      "password=\"synthetic unclosed value\nnext=safe",
+      "secret='synthetic unclosed value\r\nnext=safe",
+    ]) {
+      const detected = detectRedactions(input);
+      expect(detected.ok).toBe(true);
+      if (!detected.ok) continue;
+      const redacted = redactText(input, detected.value);
+      expect(redacted).toMatchObject({ ok: true, value: { text: `[REDACTED:token-assignment]${input.includes("\r\n") ? "\r\n" : "\n"}next=safe` } });
+      expect(JSON.stringify(redacted)).not.toContain("synthetic unclosed value");
+    }
+  });
+
+  it("preserves CRLF and LF boundaries after quoted assignment redaction", () => {
+    for (const input of [
+      "password=\"synthetic CRLF value\"\r\nnext=safe",
+      "password='synthetic LF value'\nnext=safe",
+    ]) {
+      const detected = detectRedactions(input);
+      expect(detected.ok).toBe(true);
+      if (!detected.ok) continue;
+      const redacted = redactText(input, detected.value);
+      expect(redacted.ok).toBe(true);
+      if (redacted.ok) expect(redacted.value.text).toBe(`[REDACTED:token-assignment]${input.includes("\r\n") ? "\r\n" : "\n"}next=safe`);
+    }
+  });
+
+  it("safely consumes explicit backslash-continued quoted values", () => {
+    for (const input of [
+      "password=\"synthetic continued \\\n+value\"\nnext=safe",
+      "secret='synthetic continued \\\r\nvalue'\r\nnext=safe",
+    ]) {
+      const detected = detectRedactions(input);
+      expect(detected.ok).toBe(true);
+      if (!detected.ok) continue;
+      const redacted = redactText(input, detected.value);
+      expect(redacted.ok).toBe(true);
+      if (redacted.ok) {
+        expect(redacted.value.text).not.toContain("synthetic continued");
+        expect(redacted.value.text).not.toContain("value'");
+        expect(redacted.value.text).not.toContain("value\"");
+      }
+    }
+  });
+
   it("merges overlapping and adjacent spans deterministically", () => {
     const result = redactText("abcdef\r\ngh", [
       { start: 1, end: 4, category: "jwt", source: "pattern", confidence: "medium" },
@@ -66,6 +136,22 @@ describe("M1D detectors and redaction", () => {
       { start: 6, end: 8, category: "entropy-candidate", source: "entropy", confidence: "candidate" },
     ]);
     expect(result).toEqual({ ok: true, value: { text: "a[REDACTED:authorization]gh", count: 1, categories: ["authorization", "entropy-candidate", "jwt"] } });
+  });
+
+  it("rejects surrogate-splitting offsets while accepting complete code points", () => {
+    const splitStart = redactText("A😀B", [{ start: 2, end: 3, category: "jwt", source: "pattern", confidence: "high" }]);
+    const splitEnd = redactText("A😀B", [{ start: 1, end: 2, category: "jwt", source: "pattern", confidence: "high" }]);
+    expect(splitStart).toEqual({ ok: false, error: { code: "INVALID_OFFSETS", message: "The redaction findings are invalid." } });
+    expect(splitEnd).toEqual({ ok: false, error: { code: "INVALID_OFFSETS", message: "The redaction findings are invalid." } });
+    const complete = redactText("A😀B😀C", [{ start: 1, end: 3, category: "jwt", source: "pattern", confidence: "high" }]);
+    expect(complete).toEqual({ ok: true, value: { text: "A[REDACTED:jwt]B😀C", count: 1, categories: ["jwt"] } });
+    const detected = detectRedactions("😀 password=\"synthetic Unicode value\" 😀");
+    expect(detected.ok).toBe(true);
+    if (detected.ok) {
+      const redacted = redactText("😀 password=\"synthetic Unicode value\" 😀", detected.value);
+      expect(redacted.ok).toBe(true);
+      if (redacted.ok) expect(redacted.value.text).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/);
+    }
   });
 
   it("has conservative, deterministic entropy boundaries", () => {
