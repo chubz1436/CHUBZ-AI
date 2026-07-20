@@ -194,7 +194,7 @@ Performed by **Antigravity** (read-only and trivially reversible checks), comple
 
 ---
 
-## First Implementation Tasks — Bounded Split `ACCEPTED — M1A/M1B/M1C COMPLETE`
+## First Implementation Tasks — Bounded Split `M1A–M1D COMPLETE AND ACCEPTED; M1E ACTIVE AND UNACCEPTED; M1F AND LATER UNAUTHORIZED`
 
 The former single `packages/shared` task is split into six bounded subtasks. **The assigned implementation worker receives exactly one subtask at a time, each dispatched only after owner approval of the previous one's review.** Codex is the current primary implementation worker; BUNSO remains the governing architecture source and may be assigned only with explicit owner direction. No two workers edit the same files concurrently. All M1 subtasks are pure library code — no network, no filesystem side effects, no framework.
 
