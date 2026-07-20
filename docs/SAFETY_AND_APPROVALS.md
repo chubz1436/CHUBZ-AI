@@ -1,6 +1,6 @@
 # Safety and Approvals
 
-> **STATUS: PLANNED — NOT YET IMPLEMENTED**
+> **STATUS: POLICY REFERENCE — M1A/M1B CONTRACTS MERGED; RUNTIME NOT YET IMPLEMENTED**
 
 The command center is planned around least privilege, visible intent, task isolation, and owner-controlled escalation.
 

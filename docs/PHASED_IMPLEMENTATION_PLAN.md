@@ -1,12 +1,12 @@
 # Phased Implementation Plan
 
-> **STATUS: ACCEPTED BY OWNER (2026-07-10) — IMPLEMENTATION NOT YET STARTED**
+> **STATUS: ACCEPTED PLAN — M1A/M1B CONTRACTS COMPLETE; M1C AND RUNTIME IMPLEMENTATION NOT STARTED**
 >
 > Author: Claude Code / BUNSO (Fable 5), per accepted decision D-005; implementation-worker assignment amended by D-019.
 > Date: 2026-07-10. Revised following Bantay's required revisions R1–R7.
 > This plan authorizes nothing by itself. Each phase begins only after Bantay review of the prior phase's output and an explicit owner GO for that phase.
 
-Worker roles throughout (per D-005, as amended by **D-019**): **BUNSO using Fable 5** is the temporary primary implementation worker while Fable 5 quota remains available, and remains lead designer; **Codex** is the backup and handoff implementation worker during this period and the documented long-term primary implementer; **BUNSO and Codex must never edit the same files concurrently**, and review of BUNSO-authored code falls to Bantay and Codex since BUNSO cannot independently review itself; **Bantay** reviews security, scope, and completeness; **Antigravity** validates operational feasibility on the real PC; **Opus inside Antigravity** codes only if specifically assigned; **Santos** optional backup on bounded tasks; **Kenneth / CHUBZ** approves every phase gate.
+Worker roles throughout (D-005, D-019, D-027): **Codex** is the current primary implementation worker; **BUNSO** remains the lead architecture designer and governing architecture source; **Bantay** reviews security, scope, and completeness; **Antigravity** is secondary and capability-probed; and **Chubz** approves every phase gate. No workers edit the same files concurrently. A task-specific assignment never overrides owner or repository policy.
 
 ---
 
@@ -16,7 +16,7 @@ Worker roles throughout (per D-005, as amended by **D-019**): **BUNSO using Fabl
 >
 > **M1A STATUS: COMPLETED AND MERGED INTO `main`.** Implementation, Bantay review, and Codex independent verification completed; owner approval completed; fast-forward merge into `main` completed.
 >
-> **M1B STATUS: CURRENT AND BOUNDED (D-023).** Owner GO granted 2026-07-11; in progress on `task/m1b-protocol-contracts` — pure protocol contracts only (envelopes, both directions, idempotency, event cursors, protocol errors); no runtime networking, persistence, grants, or process execution. Not merged until Bantay/Codex review and an explicit owner merge GO. **M1C remains pending and unauthorized.** Pilot-project selection and Obsidian-vault location are deferred inputs, not blockers.
+> **M1B STATUS: COMPLETED AND MERGED (D-023).** The pure protocol contracts are present in `main` through `2dc6a12`. **M1C remains not started and unauthorized.** Pilot-project selection and Obsidian-vault location are deferred inputs, not blockers.
 
 **Objective:** convert this design package into owner-accepted decisions and verify the PC is actually ready — without writing application code.
 
@@ -26,8 +26,8 @@ Completed 2026-07-10:
 
 - The architecture package (three design documents) was authored by BUNSO.
 - Bantay reviewed it and required revisions R1–R7 plus additional corrections; BUNSO applied them.
-- The owner accepted decisions D-001 … D-019 (recorded in [DECISIONS.md](DECISIONS.md)), including all former proposals P-006 … P-018.
-- Worker assignments were recorded (D-019: BUNSO/Fable 5 temporary primary implementer, Codex backup and handoff, never editing the same files concurrently).
+- The owner accepted decisions D-001 … D-027 (recorded in [DECISIONS.md](DECISIONS.md)), including all former proposals P-006 … P-018 and the architecture-alignment clarifications.
+- Worker authority and documentation policy were reconciled (D-027); no workers may edit the same files concurrently.
 - Documentation alignment across the plan, design, security, active-task, and worker-role documents.
 - Version control for this planning repository exists on branch `main` with remote `github.com/chubz1436/CHUBZ-AI`.
 
@@ -55,7 +55,7 @@ Performed by **Antigravity** (read-only and trivially reversible checks), comple
 **Tests:** none (no code).
 **Risks:** design churn delaying start → time-box review to one round plus one revision. Phase 0B may invalidate connector assumptions (U-1/U-2); that is its purpose, and manual relay absorbs the outcome.
 **Rollback:** none needed — documents only.
-**STOP POINT (status as of 2026-07-12):** Phase 0B completed with a conditional pass and the owner recorded the explicit M1A GO after reviewing its report. M1A is completed and merged into `main`. M1B is implemented on `task/m1b-protocol-contracts` under its own owner GO and is undergoing final correction/review; its merge remains pending owner approval. **M1C remains pending and unauthorized** with its own GO required.
+**STOP POINT (status aligned 2026-07-20):** M1A and M1B are completed and merged into `main`. **M1C remains not started and unauthorized** with its own GO required. The active batch is documentation alignment only; owner/Bantay review follows it before any implementation authorization.
 
 ---
 
@@ -66,7 +66,7 @@ Performed by **Antigravity** (read-only and trivially reversible checks), comple
 **Included scope**
 
 1. Monorepo scaffold: pnpm workspaces; packages `shared`, `control-plane`, `local-bridge`, `web-app`; TypeScript strict; Vitest; lockfile committed.
-2. `packages/shared`: Zod schemas for task states/transitions, commands, WS protocol (client↔CP and CP↔bridge), worker manifest, capability grants, capture records, Bridge Log front matter; the shared secret-detector library; unit tests. **(Split into the bounded subtasks M1A–M1E — see below; the assigned implementation worker receives exactly one at a time.)**
+2. `packages/shared`: Zod schemas for task states/transitions, commands, WS protocol (client↔CP and CP↔bridge), worker manifest, capability grants, capture records, Bridge Log front matter, adapter/coordination contracts, and the shared secret-detector library; unit tests. **(Split into bounded M1A–M1F subtasks — see below; the assigned implementation worker receives exactly one at a time.)**
 3. `packages/control-plane`: Fastify on `127.0.0.1`; SQLite (WAL) with migrations; session auth (Argon2 password, Phase-1 local); WS hub with event cursors + idempotency keys; command parser; task orchestrator implementing the §10 state machine (including `BLOCKED` reason codes such as `execution-unknown`); queue (1/project, 2 global); approval engine issuing HMAC grants (Phase 1 integrity/anti-replay control — not owner-presence proof; security doc §8.1); worker registry loading manifests; context assembler with denylist + redaction; artifact store with quota/retention rules; Bridge Log projector; Bantay Review Package builder; audit hash chain; CSP + sanitized output rendering + CSRF/WS-Origin controls from the start (security doc §14.1).
 4. `packages/local-bridge`: outbound WS client with enrollment + DPAPI storage; grant verifier + **operation journal (journal-before-execution, grant consumption before privileged execution, at-most-once semantics with `execution-unknown` reconciliation)**; workspace manager (**managed project clone**, Git worktrees on branch `task/<id>`, approved-commit + patch finalization — **no writes to the owner's original working copy**); process supervisor (`execa`, timeouts, tree-kill, output caps); **Codex CLI adapter** (per validated U-1) and **manual-relay adapter** (owner-attested, text-output default, explicit artifact import); capture pipeline with second-layer redaction and worker-provenance recording (connector type, executable path, version, hash when available); emergency stop levels 1–3.
 5. `packages/web-app`: React + Vite + Tailwind PWA shell; command chat; project/worker selectors; approval cards; relay cards; side panel (Task, Files & Diff, Tests, History, Workers, Settings); emergency stop button; review-package download.
@@ -76,9 +76,9 @@ Performed by **Antigravity** (read-only and trivially reversible checks), comple
 
 **Expected files/packages:** the four packages above; `.claude`/CI config as owner permits; no changes to production systems of any kind.
 
-**Assigned workers:** BUNSO/Fable 5 (temporary primary implementer per D-019, in bounded tasks), Codex (backup and handoff implementer; independent review of BUNSO-authored code — never editing the same files concurrently), Antigravity (runs the slice on the real PC and reports friction), Bantay (security-relevant diff review: auth, grants, redaction, bridge), Owner (approval at each milestone).
+**Assigned workers:** Codex (current primary implementer in bounded tasks), BUNSO (architecture conformance input and independent review only when assigned), Antigravity (real-PC validation after capability proof), Bantay (security-relevant diff review: auth, grants, redaction, bridge), and Owner (approval at each milestone).
 
-**Suggested milestone order (each a bounded Codex task with its own review; Codex receives exactly one at a time, each dispatched only after owner approval of the previous):** M1A–M1E shared contracts (split defined below) → M2 control-plane skeleton + DB + auth + WS → M3 bridge enrollment + operation journal + supervisor + managed clone/worktrees → M4 orchestrator + grants end-to-end with a fake "echo worker" → M5 Codex CLI adapter + manual relay (owner-attested import flow) → M6 web app chat + approval flow (CSP and sanitized rendering from the start) → M7 capture/diff/tests/review package → M8 Bridge Log projector + emergency stop + hardening pass → **M9 (separately gated): the explicit apply-to-project action** — apply/cherry-pick/export of an approved patch into the owner's real project as its own displayed bounded action with its own approval card; may be deferred to Phase 3 at the owner's choice, with manual patch application as the interim.
+**Suggested milestone order (each a bounded Codex task with its own review; Codex receives exactly one at a time, each dispatched only after owner approval of the previous):** M1A–M1E shared contracts → **M1F Adapter & Coordination Contracts** → M2 control-plane skeleton + DB + auth + WS → M3 bridge enrollment + operation journal + supervisor + managed clone/worktrees → M4 orchestrator + grants end-to-end with a fake "echo worker" → M5 Codex CLI adapter + manual relay (owner-attested import flow) → M6 web app chat + approval flow (CSP and sanitized rendering from the start) → M7 capture/diff/tests/review package → M8 Bridge Log projector + emergency stop + hardening pass → **M9 (separately gated): the explicit apply-to-project action** — apply/cherry-pick/export of an approved patch into the owner's real project as its own displayed bounded action with its own approval card; may be deferred to Phase 3 at the owner's choice, with manual patch application as the interim.
 
 **Acceptance criteria (all demonstrated live to the owner on the PC):**
 
@@ -186,19 +186,24 @@ Performed by **Antigravity** (read-only and trivially reversible checks), comple
 
 ---
 
-## First Implementation Tasks — Bounded Split `ACCEPTED — IN EXECUTION (M1A merged; M1B in final review)`
+## First Implementation Tasks — Bounded Split `ACCEPTED — M1A/M1B COMPLETE; M1C NOT STARTED`
 
-The former single `packages/shared` task is split into five bounded subtasks. **The assigned implementation worker receives exactly one subtask at a time, each dispatched only after owner approval of the previous one's review.** Per D-019 the current assignee is **BUNSO/Fable 5**, with Codex as backup and handoff worker; the two never edit the same files concurrently. All subtasks are pure library code — no network, no filesystem side effects, no framework.
+The former single `packages/shared` task is split into six bounded subtasks. **The assigned implementation worker receives exactly one subtask at a time, each dispatched only after owner approval of the previous one's review.** Codex is the current primary implementation worker; BUNSO remains the governing architecture source and may be assigned only with explicit owner direction. No two workers edit the same files concurrently. All M1 subtasks are pure library code — no network, no filesystem side effects, no framework.
 
-Status (corrected 2026-07-12): Phase 0B is completed with a conditional pass and the owner reviewed its report. **M1A Core Contracts is completed and merged into `main`.** **M1B Protocol Contracts is implemented on `task/m1b-protocol-contracts` and undergoing final correction/review; its merge remains pending owner approval.** **M1C remains pending and unauthorized**; it requires its own explicit owner GO.
+Status (aligned 2026-07-20): Phase 0B completed with a conditional pass and owner review. **M1A Core Contracts and M1B Protocol Contracts are completed and merged into `main`.** **M1C remains not started and unauthorized**; it requires its own explicit owner GO.
 
 - **M1A — Core contracts:** task states and the legal-transition table (FINAL_ARCHITECTURE_DESIGN.md §10, including `BLOCKED` reason codes), the twelve-command grammar, and the worker manifest schema (§8.3). **Unit tests only** — every legal transition accepted, every illegal transition rejected.
 - **M1B — Protocol contracts:** client↔Control-Plane and Control-Plane↔Bridge message envelopes, idempotency keys, event cursors. **Unit tests only.**
 - **M1C — Approval-security contracts:** capability-grant schemas; canonical action representation and its stable hash serialization; expiry and replay model; explicit Phase 1 HMAC-limitation documentation in the schema source (security doc §8.1); and the Phase 2 passkey-backed approval-proof contracts — challenge structure binding nonce, action hash, task, attempt, scope, and expiry (§8.2). **Security tests only** — canonicalization stability, replay/expiry rejection, challenge-binding tests.
 - **M1D — Redaction library:** context denylist, pattern detectors, entropy detector, test corpus. **No filesystem or network I/O.**
 - **M1E — Capture and projection contracts:** capture records including worker-provenance fields (connector type, executable path, version, hash; owner-attested marker for manual relay), artifact metadata with quota/retention fields, Bridge Log front matter, and the review-package manifest + hash format. **Unit tests only.**
+- **M1F — Adapter & Coordination Contracts:** adapter readiness and run records; assignment, write-scope, lease, handoff, quota-confidence, evidence-taxonomy, and operation-journal reconciliation schemas; proposed `no-eligible-worker` and `stale-lease` blocked reasons. **Contract tests only** — no bridge, routing, adapter, or network implementation. It follows M1E and must complete before M2.
 
-Why M1A first: it is the smallest fully bounded start, zero-risk (no I/O), forces the central state-machine ambiguities to surface immediately while the design is fresh, and everything else depends on it. Each subtask is ideally sized review material for Bantay and Codex before riskier bridge code begins.
+M1F freezes the coordination boundary before runtime orchestration. Its acceptance suite specifies duplicate dispatch/event, stale lease, malformed structured output, expired grant/authentication, cancellation and resume, rate-limit, partial-artifact, crash, and journal-reconciliation cases; runtime proofs occur in M2/M3 and Phase 3. SQLite WAL and the operation journal remain the MVP persistence strategy; a durable workflow engine is not introduced without operational evidence.
+
+### M1C GO prerequisites
+
+M1C may begin only after the owner records an explicit M1C GO that names its bounded scope and assignee, confirms the M1B merge evidence, confirms no concurrent worker holds the same files, and requires Bantay review before the next milestone. The GO does not authorize M1D, M1E, M1F, runtime code, adapter work, remote access, production access, merge, or deployment.
 
 ---
 
@@ -208,7 +213,7 @@ Why M1A first: it is the smallest fully bounded start, zero-risk (no I/O), force
 |---|---|---|
 | 0A | Owner GO on this package post-Bantay review — **granted** | Decisions resolved — **completed** |
 | 0B | Phase 0A complete — **entered** | Antigravity validation executed and U-1/U-2 answered, then owner reviews the report — **completed, conditional pass** |
-| 1 | Phase 0B passed, owner reviewed the validation report, and owner recorded an explicit GO — **M1A completed, reviewed, owner-approved, and merged into `main`; M1B GO granted, implemented on its task branch, in final correction/review, merge pending owner approval; M1C+ still needs its own GO** | Live demo + acceptance list + security reviews |
+| 1 | Phase 0B passed, owner reviewed the validation report, and each bounded M1 task has its own GO — **M1A and M1B are merged into `main`; M1C is not started and needs its own GO; M1F follows M1E before M2** | Live demo + acceptance list + security reviews |
 | 2 | Owner GO | §18 checklist evidenced; explicit remote-enable decision |
 | 3 | Owner GO | Adapter contract suite green per adapter |
 | 4 | Owner GO | Concurrency + hardening acceptance tests |

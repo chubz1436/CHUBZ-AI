@@ -1,38 +1,36 @@
 # Active Tasks
 
-> **STATUS: M1A MERGED INTO `main`. M1B PROTOCOL CONTRACTS CURRENT ON `task/m1b-protocol-contracts` (OWNER GO GRANTED 2026-07-11). M1C PENDING AND UNAUTHORIZED.**
+> **STATUS: M1A AND M1B MERGED INTO `main`. CURRENT WORK: CODEX DOCUMENTATION-ONLY BUNSO ARCHITECTURE ALIGNMENT. M1C NOT STARTED AND UNAUTHORIZED.**
 
 ## Project lifecycle status
 
-1. **Completed** — Architecture design (BUNSO using Fable 5), Bantay review (revisions R1–R7 applied), and owner architecture decisions (D-001 … D-023).
+1. **Completed** — Architecture design (BUNSO using Fable 5), Bantay review (revisions R1–R7 applied), and owner architecture decisions through D-027.
 2. **Completed** — Phase 0A documentation and decision prerequisites.
 3. **Completed — conditional pass** — Antigravity Phase 0B operational feasibility validation ([PHASE0B_OPERATIONAL_VALIDATION_REPORT.md](PHASE0B_OPERATIONAL_VALIDATION_REPORT.md)).
 4. **Completed** — M1A Core Contracts: implemented, Bantay/Codex reviewed (D-021, D-022 hardening applied), owner-approved, and fast-forward merged into `main`.
-5. **Current** — **BUNSO/Fable 5 M1B Protocol Contracts** on branch `task/m1b-protocol-contracts` (owner GO granted 2026-07-11; scope per D-023).
-6. **Pending** — M1B Bantay/Codex review, then owner merge approval.
-7. **Pending and not authorized** — M1C Approval-Security Contracts, then M1D … M1E one at a time, each after owner approval of the previous review.
+5. **Completed** — M1B Protocol Contracts: merged into `main` through `2dc6a12`.
+6. **Current** — Codex documentation-only BUNSO architecture alignment on `task/bunso-architecture-alignment`; BUNSO's architecture is governing design input.
+7. **Pending and not authorized** — M1C Approval-Security Contracts, then M1D … M1F one at a time, each after owner approval of the previous review.
 
 Earlier project bootstrap and worker onboarding (Codex, BUNSO, Antigravity) are complete and precede item 1.
 
-## Current task detail — M1B Protocol Contracts
+## Current task detail — BUNSO architecture alignment
 
-Under implementation on `task/m1b-protocol-contracts` (never merged before review and an explicit owner merge GO): pure versioned protocol contracts in `packages/shared/src/protocol/` — common envelopes, Client ↔ Control Plane and Control Plane ↔ Bridge message kinds, idempotency/replay classification, event cursors with stream resume, and standard protocol errors, plus exhaustive unit tests. No WebSocket, persistence, queue, authentication, grant, process-execution, or network code (D-023).
+Codex is reconciling BUNSO architecture evidence with the accepted records. This is documentation-only: no runtime code, adapter implementation, M1C work, merge, push, deployment, or production action is authorized. The output is the official alignment record plus consistent architecture, security, milestone, decision, and worker-policy documentation.
 
 Deferred owner inputs (not blockers, per D-022): the Obsidian vault path (U-7) remains configurable, and the pilot project remains uncreated and is needed only when a later runnable workflow requires it. Cloudflare account status (U-6) is needed only before Phase 2.
 
-## Implementation-worker assignment (per D-019)
+## Worker assignment and concurrency
 
-- **BUNSO using Fable 5** is temporarily the primary implementation worker while Fable 5 quota remains available.
-- **Codex** is the backup and handoff implementation worker during this period, and remains the documented long-term primary implementation worker.
-- **BUNSO and Codex must never edit the same files concurrently.** Exactly one implementation worker holds a given file or package at a time; handoff is explicit and owner-visible.
-- Because BUNSO cannot independently review its own implementation, review of BUNSO-authored code falls to Bantay and Codex.
+- **Codex** is the current primary implementation worker.
+- **BUNSO** remains the lead architecture designer and a governing architecture source; it is not the current implementation worker.
+- **Bantay** reviews strategy, safety, scope, and prompts. **Antigravity** is secondary and capability-probed until approved.
+- No workers may edit the same files concurrently. Handoff is explicit and owner-visible; no worker can override owner or repository policy.
 
 ## Authorization boundary
 
-M1A Core Contracts is completed, owner-approved, and merged into `main`.
+M1A Core Contracts and M1B Protocol Contracts are completed and merged into `main`.
 
-**M1B is authorized and current** (owner GO 2026-07-11, scope bounded by D-023) on `task/m1b-protocol-contracts` only; merging M1B into `main` requires Bantay/Codex review and a separate explicit owner merge GO.
-
-**M1C is pending and not authorized.** It requires its own explicit owner GO before any M1C coding begins.
+**M1C is not started and unauthorized.** It requires its own explicit owner GO and the documented M1C prerequisites before any M1C coding begins. The next gate after this documentation batch is owner/Bantay review, not automatic implementation.
 
 Nothing in this file authorizes runtime orchestration, worker connection, domain or tunnel configuration, server access, MikroTik access, deployment, restart, infrastructure changes, or production actions.

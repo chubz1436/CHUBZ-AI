@@ -1,6 +1,6 @@
 # Architecture
 
-> **STATUS: PLANNED — NOT YET IMPLEMENTED**
+> **STATUS: ARCHITECTURE REFERENCE — M1A/M1B CONTRACTS MERGED; RUNTIME NOT YET IMPLEMENTED**
 
 ## Planned components
 
@@ -17,4 +17,4 @@ The owner starts in chat or invokes a slash command. The system creates an isola
 
 ## Planning-only endpoints
 
-The proposed domain split is `ai`, `bridge`, `auth`, `files`, `docs`, and `status` under `ichubz.com`. No networking, DNS, hosting, authentication, or tunnel design has been implemented or configured.
+The accepted future Phase 2 hostname is `ai.ichubz.com`; `bridge`, `auth`, `files`, `docs`, and `status` remain deferred under D-008. No networking, DNS, hosting, authentication, or tunnel design has been implemented or configured.

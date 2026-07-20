@@ -1,8 +1,8 @@
 # Worker Roles
 
-> **STATUS: PLANNED — NOT YET IMPLEMENTED**
+> **STATUS: ACCEPTED WORKER POLICY — M1A/M1B CONTRACTS MERGED; RUNTIME NOT YET IMPLEMENTED**
 >
-> **Temporary assignment in force (D-019):** BUNSO using Fable 5 is the temporary primary implementation worker while Fable 5 quota remains available. Codex is the backup and handoff implementation worker during this period and remains the documented long-term primary implementer. **BUNSO and Codex must never edit the same files concurrently.** Because BUNSO cannot independently review its own implementation, review of BUNSO-authored code falls to Bantay and Codex. The table below describes the long-term steady state.
+> **Current assignment (D-027):** Codex is the primary implementation worker. BUNSO remains the lead architecture designer and governing architecture source; Antigravity remains a secondary, capability-probed worker. **No workers may edit the same files concurrently.**
 >
 > Once the worker registry exists, manifests become the authoritative worker-role definition and this file becomes a projection of them (D-011).
 
@@ -17,3 +17,9 @@
 | Santos using Hermes Agent | Separate specialized agent and optional backup worker; planned invocation: `/santos` | Invoked only through an assigned task and approved scope; not combined with another worker |
 
 These identities remain separate: Claude Code / BUNSO is not Opus inside Antigravity; Antigravity is not Claude Code; Santos is not combined with another worker; and Bantay is not an implementation worker. Future workers are planned to register through a plug-in registry that declares identity, capabilities, context needs, and permissions. Task isolation and conflict detection should prevent silent overlap between workers.
+
+## Policy precedence and documentation
+
+Chubz is the final approver. Bantay is the strategy, safety, scope, and prompt reviewer. Workers cannot override owner or repository policy, infer production authorization, or reinterpret an informal draft as a governing contract. Newer explicit owner decisions override older planning notes; accepted decisions override informal drafts; merged approved contracts override unapproved proposals.
+
+When an implementation changes architecture-governing behavior, the worker updates the applicable architecture documentation and decision record in that same batch. Small internal edits do not require unrelated documentation churn.

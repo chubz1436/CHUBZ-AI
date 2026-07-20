@@ -1,6 +1,6 @@
 # Final Architecture Design
 
-> **STATUS: ACCEPTED BY OWNER (decisions D-006 … D-018, 2026-07-10) — NOT YET IMPLEMENTED**
+> **STATUS: ACCEPTED ARCHITECTURE (decisions D-006 … D-027) — M1A/M1B CONTRACTS MERGED; RUNTIME NOT YET IMPLEMENTED**
 >
 > Author: Claude Code / BUNSO (Fable 5), lead and final designer per accepted decision D-005.
 > Date: 2026-07-10. Revised following Bantay's required revisions R1–R7; accepted by Kenneth / CHUBZ the same day.
@@ -21,7 +21,7 @@ Workers connect through a **manifest-driven adapter system** with four connector
 
 Every consequential action passes a typed approval gate enforced by **short-lived, single-use, task-bound capability grants** checked by the Bridge. In Phase 1 these are HMAC-signed — an integrity and anti-replay control, stated honestly as *not* a proof of owner presence, since the Control Plane holds the signing key; a Bridge-verifiable passkey approval proof is a hard prerequisite before remote access (SECURITY_AND_THREAT_MODEL.md §8). The MVP deliberately refuses (does not merely gate) deployment, database, MikroTik, DNS, credential, and server-restart actions.
 
-The MVP proves one vertical slice: one owner, one project, one bridge, one CLI connector plus manual relay, task tracking, capture, diffs, one approval gate, automatic Bridge Log, and a downloadable Bantay Review Package.
+The MVP proves one vertical slice: one owner, one project, one bridge, one CLI connector plus manual relay, task tracking, capture, diffs, one approval gate, automatic Bridge Log, and a downloadable Bantay Review Package. M1A and M1B contract foundations are merged; M1C and all runtime work remain separately gated.
 
 ---
 
@@ -259,7 +259,7 @@ Legend — **Confirmed**: validated on this PC. **Likely**: documented mechanism
 | Bantay / ChatGPT | none sanctioned for the ChatGPT app; OpenAI API is a *different* surface than the Bantay persona | **Unsupported programmatically (U-5)** | review only (never write) | **manual-relay via Review Package (primary mode)** |
 | Future workers | declared in manifest | n/a | per manifest | manual-relay required in every manifest |
 
-**Honesty note:** as of this design, *zero* connectors are Confirmed. Phase 0 includes Antigravity validating U-1/U-2 before the currently assigned implementation worker begins the first CLI adapter. Under D-019, that worker is temporarily BUNSO/Fable 5 while quota remains available; Codex is the backup and handoff worker. The system must display each worker's real connector tier in the Worker Health view — never pretend a manual worker is automated. Manual-relay workers are never represented as automatically controlled or cryptographically authenticated: their results are labeled **owner-attested** throughout the UI, capture records, and review packages, and their default capability is review/design/text output only.
+**Honesty note:** as of this design, no automated connector is confirmed merely by this document. Phase 0's U-1/U-2 evidence is historical; M1F defines the readiness probes that must be repeated before an adapter is enabled. Codex is the current primary implementation worker (D-027); D-019's BUNSO assignment is preserved as historical context. The system must display each worker's real connector tier in the Worker Health view — never pretend a manual worker is automated. Manual-relay workers are never represented as automatically controlled or cryptographically authenticated: their results are labeled **owner-attested** throughout the UI, capture records, and review packages, and their default capability is review/design/text output only.
 
 ### 8.3 Worker manifest schema (registry contract) `PROPOSED`
 
@@ -292,6 +292,14 @@ health() -> status
 Nothing in the core references a specific worker by name — satisfying D-004.
 
 ---
+
+### 8.4 Adapter integration and readiness `ACCEPTED (D-024)`
+
+Adapters are SDK/CLI-first. GUI automation is not a normal connector path and browser-controlled operation remains deferred until it has an automated-provenance design. Every adapter exposes a preferred integration and a stable fallback; manual relay is always supported and never presented as automation.
+
+`codex exec` is the initial automated Codex path. App-server, Python SDK, and equivalent paths are experimental feature-flagged options until a probe proves their capabilities. Claude's planned backend path is the Agent SDK with API-key authentication; an embedded subscription session is not treated as a backend credential. Antigravity is capability-probed and remains secondary until its proof of concept passes.
+
+Before dispatch is enabled, startup probes record version, capabilities, authentication state, sandbox support, noninteractive operation, cancellation, resume, structured output, and quota/rate-limit confidence when available. The registry records explicit readiness (`unprobed`, `probing`, `ready`, `degraded`, `manual-only`, `blocked`, or `frozen`) rather than a Boolean. A failed or regressed adapter falls back to manual relay and retains its evidence.
 
 ## 9. Command Model
 
@@ -523,6 +531,12 @@ Captured automatically per attempt (all post-redaction): original owner request;
 | Stale approval | Approval requests expire (default 30 min) → back to AWAITING_APPROVAL with "expired, re-request" notice; grants expire in ≤10 min and are single-use |
 | Abandoned task | Auto-BLOCKED after 14 days idle, surfaced in `/status` |
 | System restart / crash mid-operation | CP: SQLite WAL recovery + journal reconciliation; Bridge: on start, kills orphaned worker processes and reconciles its operation journal. An operation journaled `started` but not `completed` is **never blindly retried**: for Git operations the Bridge reconciles against actual repository state (does the expected commit/branch exist and match?) and either marks it `completed` or sets the task `BLOCKED(execution-unknown)` for owner-reviewed resolution |
+
+### Integrity, tracing, and recovery tests `ACCEPTED (D-025/D-026)`
+
+The trace model is OpenTelemetry-compatible. A trace links the task, attempt, operation, adapter run, worker process, approval, artifacts, and recovery or failure event; raw worker text is never that authority. Quota observations carry source and confidence, not a fabricated precise value. Rate limits trip a circuit breaker; authentication expiry, regression, or manual owner action can freeze an adapter or runtime.
+
+Runtimes are version-pinned and hash-verified where practical. Upgrades use a staged canary, repeat capability probes, and a rollback path. The resilience suite covers duplicate dispatch and events, bridge/worker crashes, stale lease, expired approval, malformed structured output, authentication expiry, cancellation during execution, resume after interruption, rate limits, partial artifacts, and operation-journal reconciliation. SQLite in WAL mode plus the operation journal remains the MVP durability model; a durable workflow engine is deferred until evidence of need.
 
 ### Concurrency and resource control `RECOMMENDED`
 

@@ -1,6 +1,6 @@
 # Decisions
 
-> **STATUS: DECISIONS D-001 … D-023 ACCEPTED BY OWNER — M1A MERGED INTO `main`; M1B IN PROGRESS ON `task/m1b-protocol-contracts`**
+> **STATUS: DECISIONS D-001 … D-027 ACCEPTED BY OWNER — M1A AND M1B MERGED INTO `main`; M1C NOT STARTED AND UNAUTHORIZED**
 
 This file is the decision log. An entry marked **ACCEPTED BY OWNER** records a decision Kenneth / CHUBZ has approved. Acceptance of a design decision does **not** by itself authorize implementation, deployment, infrastructure configuration, or production access; each implementation phase carries its own explicit owner GO.
 
@@ -127,6 +127,7 @@ Decisions D-006 … D-018 correspond to proposals P-006 … P-018 in [FINAL_ARCH
 - **Concurrency boundary:** BUNSO and Codex must **never edit the same files concurrently.** Exactly one implementation worker holds a given file or package at a time; handoff is explicit and owner-visible.
 - **Boundary:** This decision reassigns implementation-worker identity only. It does not authorize coding to begin. Each implementation phase and bounded subtask still requires its own explicit owner GO, and Bantay review plus Antigravity Phase 0 validation precede any coding.
 - **Note:** D-005 remains in force. BUNSO's design authority is unchanged; this decision adds a temporary implementation role on top of it. When BUNSO implements, independent review of that work falls to Bantay and Codex, since BUNSO cannot be its own independent reviewer.
+- **Current-status clarification:** The temporary implementation assignment has ended for the current batch. D-027 records Codex as the current primary implementation worker; this historical decision remains preserved rather than rewritten.
 
 ## D-020 — Task-state count and cancellation clarification
 
@@ -182,3 +183,35 @@ Decisions D-006 … D-018 correspond to proposals P-006 … P-018 in [FINAL_ARCH
   7. Bridge messages must use typed high-level operations, never raw shell command strings.
   8. M1B does not implement WebSocket servers, persistence, queues, authentication, grants, process execution, or network I/O.
   9. M1C and later phases remain unauthorized.
+
+## D-024 — Adapter integration strategy and readiness
+
+- **Status:** ACCEPTED BY OWNER
+- **Decision date:** 2026-07-20
+- **Decision:** The normal integration path is SDK/CLI-first, never GUI automation. Every adapter has a preferred path and a stable fallback, with owner-attested manual relay retained as the universal fallback under D-012. `codex exec` is the initial Codex automated path; deeper app-server, Python SDK, or equivalent paths remain feature-flagged until capability-proven. Claude backend integration is planned around the Agent SDK with API-key authentication, not an assumed `claude.ai` subscription session. Antigravity is a secondary capability-probed adapter, not a required primary dependency.
+- **Readiness:** Before automated use, an adapter must report installed version, supported capabilities, authentication state, sandbox support, noninteractive execution, cancellation, resume, structured output, and quota/rate-limit confidence when available. Its state is explicit (for example: unprobed, probing, ready, degraded, manual-only, blocked, frozen), never a simple online/offline Boolean.
+- **Boundary:** This decision selects architecture and contracts only. It does not assert that any unproven integration works or authorize an adapter implementation.
+
+## D-025 — Isolation, observability, quota, and runtime integrity
+
+- **Status:** ACCEPTED BY OWNER
+- **Decision date:** 2026-07-20
+- **Decision:** Worker execution uses layered isolation: per-attempt Git worktree, vendor sandbox where available, restricted filesystem roots, default-deny network where practical with explicit per-task grants, and no shared mutable working directory or implicit production access. OpenTelemetry-compatible trace context links task, attempt, operation, adapter run, worker process, approval, artifact, and recovery/failure event.
+- **Operational controls:** Quota data carries a confidence/source level; rate limits use circuit breakers; authentication expiry is surfaced; adapters and runtimes have freeze switches. Worker runtimes are version-pinned and hash-verified where practical, upgraded through staged canaries, capability-probed after upgrade, and rollback-capable after regression.
+- **Boundary:** D-009, D-012, D-016, and D-019 remain controlling for managed workspaces, manual relay, concurrency, and worker handoff.
+
+## D-026 — M1F coordination and resilience contracts
+
+- **Status:** ACCEPTED BY OWNER
+- **Decision date:** 2026-07-20
+- **Decision:** M1F, **Adapter & Coordination Contracts**, is a bounded contract milestone after M1E and before M2. It defines versioned schemas for assignment, write scope, lease, handoff, quota snapshot/confidence, evidence taxonomy, adapter readiness/run, lifecycle event, operation-journal reconciliation, and the proposed `no-eligible-worker` and `stale-lease` blocked reasons. It does not implement a bridge, routing engine, or worker adapter.
+- **Required test design:** The contract and later runtime suites cover duplicate dispatch/event, bridge or worker crash, stale lease, expired approval grant, malformed structured output, authentication expiry, cancellation during execution, resume after interruption, rate limit, partial artifact, and journal reconciliation.
+- **Persistence:** MVP retains SQLite in WAL mode, the operation journal, and reconciliation/recovery logic. Temporal or another durable workflow engine is evaluated only when demonstrated scale or operational complexity justifies it.
+- **Boundary:** M1F requires its own explicit owner GO and does not authorize M1C, M2, or runtime work.
+
+## D-027 — Worker authority, policy precedence, and same-action documentation
+
+- **Status:** ACCEPTED BY OWNER
+- **Decision date:** 2026-07-20
+- **Decision:** Chubz is final approver; Bantay reviews strategy, safety, scope, and prompts; Codex is the current primary implementation worker; BUNSO remains an architecture source; and Antigravity remains secondary until capability-proven. Workers cannot override owner or repository policy, infer production authorization, or treat a draft as a governing contract.
+- **Precedence:** Newer explicit owner decisions override older conflicting planning notes; accepted decisions override informal drafts; merged approved contracts override unapproved proposals. Architecture-governing implementation changes update their applicable documentation and decision record in the same implementation batch, without requiring unrelated documentation churn.

@@ -1,6 +1,6 @@
 # Security and Threat Model
 
-> **STATUS: ACCEPTED BY OWNER (2026-07-10, with D-006 … D-019) — NOT YET IMPLEMENTED**
+> **STATUS: ACCEPTED ARCHITECTURE (2026-07-10 through D-027) — CONTRACT FOUNDATIONS ONLY; RUNTIME NOT YET IMPLEMENTED**
 >
 > Author: Claude Code / BUNSO (Fable 5), per accepted decision D-005.
 > Date: 2026-07-10. Revised following Bantay's required revisions R1–R7.
@@ -35,8 +35,8 @@ flowchart LR
 - **TB-1** Internet → Cloudflare Access: only the owner's authenticated identity passes (Phase 2). In Phase 1 this boundary is "loopback only" — nothing crosses it.
 - **TB-2** Cloudflare → Control Plane: `cloudflared` originates outbound; Control Plane listens on `127.0.0.1` only and additionally validates its own session — Cloudflare Access is a wall, not the only wall.
 - **TB-3** Control Plane → Bridge: mutual authentication (bridge enrollment credential + server identity pinning); every privileged instruction must carry a valid capability grant.
-- **TB-4** Bridge → worker process: supervised child process; pinned cwd/env; timeout; tree-kill. *Not* a strong sandbox in MVP — see Residual Risks.
-- **TB-5** Worker → filesystem: worker is told to operate in its worktree and its grant covers only that path; enforcement in MVP is supervision + post-hoc detection (capture diffs any out-of-scope writes it detects via configured watch paths), hardened later with a restricted OS account.
+- **TB-4** Bridge → worker process: supervised child process; pinned cwd/env; timeout; tree-kill; vendor sandbox where capability-proven. *Not* a strong sandbox in MVP — see Residual Risks.
+- **TB-5** Worker → filesystem/network: worker is restricted to its worktree and explicit filesystem roots; network is default-deny where practical and enabled only by task-scoped grant. MVP enforcement remains supervision + post-hoc detection until the restricted worker account is in place.
 
 **The web app is untrusted display code.** It holds no secrets, signs nothing, and every command it sends is re-validated by the Control Plane.
 
@@ -65,6 +65,7 @@ flowchart LR
 | AP-8 | Supply-chain compromise of a dependency | Lockfile-pinned versions, minimal dependency set, `pnpm audit` in CI, no postinstall scripts where avoidable, dependency review as an explicit implementation-phase checklist item |
 | AP-9 | Cloudflare account takeover | Owner account hardening prerequisite (MFA on Cloudflare) before Phase 2 go-live; in-app auth remains a second wall even if the edge falls |
 | AP-10 | Duplicate/replayed remote commands after reconnect | **At-most-once design**: idempotency keys end-to-end; the Bridge journals privileged operations before execution and consumes grants before privileged execution; a replay receives the original result; ambiguous outcomes become `execution-unknown` for owner-reviewed reconciliation, never blind retry (design doc §16) |
+| AP-11 | Runtime drift, expired adapter authentication, or provider rate limit | Version pinning and hash verification where practical; startup capability probes; quota-confidence labels; rate-limit circuit breakers; staged canaries, rollback, and owner/automatic freeze switches (D-025) |
 
 ## 5. Web-to-Local-Bridge Risks (the critical chain)
 
@@ -210,6 +211,7 @@ Worker output is untrusted content; the browser is a delivery surface. Required 
 - Clock: single-host timestamps (UTC, monotonic sequence ids) — no distributed clock problem in MVP.
 - Retention: never auto-deleted in MVP; export supported.
 - The audit chain is included (summarized) in review packages so external review can see the full action history.
+- Trace context is OpenTelemetry-compatible and links task, attempt, operation, adapter run, worker process, approval, artifact, and recovery/failure event. Worker output is captured evidence, never the source of authority.
 
 ## 16. Emergency Stop
 

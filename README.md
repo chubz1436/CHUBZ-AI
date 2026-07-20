@@ -1,6 +1,6 @@
 # CHUBZ AI Command Center
 
-> **STATUS: PLANNED — NOT YET IMPLEMENTED**
+> **STATUS: ACCEPTED ARCHITECTURE — M1A/M1B CONTRACTS MERGED; RUNTIME IMPLEMENTATION NOT YET STARTED**
 
 CHUBZ AI Command Center is envisioned as a local-first, remotely accessible AI command ecosystem. It will give Kenneth / CHUBZ one chat-style interface for coordinating multiple specialized AI workers while retaining explicit ownership, isolation, traceability, and final approval.
 
@@ -10,7 +10,7 @@ The planned experience is both chat-first and automation-first: people can issue
 
 - Bantay / ChatGPT — architecture, safety, scope, prompt, and review assistance.
 - Codex — primary implementation worker.
-- Claude Code / BUNSO — separate backup implementation worker and independent reviewer.
+- Claude Code / BUNSO — lead architecture designer and governing architecture source; implementation or review only when explicitly assigned.
 - Antigravity with Gemini 3.1 Pro High — operational investigation, validation, and specifically assigned coding.
 - Santos using Hermes Agent — specialized agent and optional backup worker, invoked through the planned `/santos` command.
 - Opus inside Antigravity — coding only when specifically assigned.
@@ -26,18 +26,13 @@ Santos is a separate worker and is not part of Antigravity, Claude Code / BUNSO,
 - Automatic Bridge Log records in Markdown suitable for Obsidian.
 - A future plug-in registry for adding workers without coupling them to the core.
 
-No application functionality exists yet. This repository currently contains planning documentation and placeholders only.
+M1A Core Contracts and M1B Protocol Contracts are merged. Runtime application functionality has not started: M1C requires its own explicit owner GO. Current architecture alignment and milestone status are maintained in [docs/ACTIVE_TASKS.md](docs/ACTIVE_TASKS.md) and [docs/PHASED_IMPLEMENTATION_PLAN.md](docs/PHASED_IMPLEMENTATION_PLAN.md).
 
 ## Planning-only domain map
 
-- `ai.ichubz.com`
-- `bridge.ichubz.com`
-- `auth.ichubz.com`
-- `files.ichubz.com`
-- `docs.ichubz.com`
-- `status.ichubz.com`
+- `ai.ichubz.com` (the only future Phase 2 hostname)
 
-These names are references only; no DNS, hosting, tunnel, authentication, or deployment configuration has been performed.
+All other proposed subdomains are deferred. No DNS, hosting, tunnel, authentication, or deployment configuration has been performed.
 
 ## Start here
 
