@@ -9,6 +9,8 @@ import * as protocolBarrel from "../../src/protocol/index.js";
 import type { ParsedMutatingEnvelope as _NotExportedFromRoot } from "../../src/index.js";
 // @ts-expect-error — ParsedMutatingEnvelope is internal (digest-internal.ts) and not public API
 import type { ParsedMutatingEnvelope as _NotExportedFromBarrel } from "../../src/protocol/index.js";
+// @ts-expect-error — raw secret-bearing verification key is not public API
+import type { GrantVerificationKey as _NotExportedRawGrantKey } from "../../src/index.js";
 
 /**
  * R2 export-boundary patch: the only supported public mutation-digest
@@ -22,6 +24,8 @@ const UNSAFE_LOW_LEVEL_EXPORTS = [
   "canonicalizeForDigest",
   "grantAuthenticationPayload",
   "verifyGrantAuthentication",
+  "GrantVerificationKey",
+  "createHmacGrantAuthenticator",
 ] as const;
 
 const rawChatSubmit = (extra: Record<string, unknown> = {}) => ({

@@ -1,9 +1,10 @@
-import { createHmac } from "node:crypto";
+import { createHmac, timingSafeEqual } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { canonicalizeForDigest } from "../src/protocol/digest-internal.js";
 import {
   APPROVAL_ACTION_VERSION,
   APPROVAL_PROOF_VERSION,
+  APPROVAL_SECURITY_LIMITS,
   CapabilityGrantSchema,
   classifyGrantConsumption,
   digestApprovalAction,
@@ -11,6 +12,7 @@ import {
   parseApprovalProof,
   type ApprovalAction,
   type CapabilityGrant,
+  type GrantAuthenticationVerifier,
   verifyApprovalProofBinding,
   verifyCapabilityGrant,
 } from "../src/index.js";
@@ -19,6 +21,15 @@ type WorkspacePrepareAction = Extract<ApprovalAction, { operation: "workspace.pr
 
 const KEY = new Uint8Array(Array.from({ length: 32 }, (_, index) => index + 1));
 const KEY_ID = "phase1-key-01";
+
+/** Test-only runtime boundary; raw test key material never crosses the shared API. */
+const AUTHENTICATOR: GrantAuthenticationVerifier = {
+  verify: ({ algorithm, keyId, payload, signature }) => {
+    if (algorithm !== "hmac-sha256" || keyId !== KEY_ID) return false;
+    const expected = createHmac("sha256", KEY).update(payload, "utf8").digest();
+    return expected.length === signature.length && timingSafeEqual(expected, signature);
+  },
+};
 
 const action = (overrides: Partial<WorkspacePrepareAction> = {}): WorkspacePrepareAction => ({
   actionVersion: APPROVAL_ACTION_VERSION,
@@ -93,6 +104,34 @@ const expectation = (actionDigest: string, overrides: Record<string, unknown> = 
   intendedVerifier: "bridge-01",
   now: "2026-07-20T10:05:00Z",
   ...overrides,
+});
+
+const BASE64URL_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+
+const mutateSignature = (signature: string, offset: number): string => {
+  const last = signature.at(-1);
+  if (last === undefined) throw new Error("signature unexpectedly empty");
+  const index = BASE64URL_ALPHABET.indexOf(last);
+  if (index < 0) throw new Error("signature has an invalid alphabet character");
+  return `${signature.slice(0, -1)}${BASE64URL_ALPHABET[(index + offset) % 64]}`;
+};
+
+const workerDispatchAction = (manifestVersion: string) => ({
+  actionVersion: "1.0",
+  taskId: "task-42",
+  attemptId: "attempt-1",
+  operationId: "op-dispatch-1",
+  operation: "worker.dispatch",
+  policyClass: "worker-execution",
+  target: { kind: "worker", resourceId: "codex" },
+  parameters: {
+    projectId: "pilot-project",
+    workspaceId: "workspace-42",
+    worker: { manifestId: "codex", manifestVersion },
+    instructionDigest: `sha256:${"c".repeat(64)}`,
+    contextArtifactIds: [],
+  },
+  constraints: { timeoutSec: 120, requiresCleanWorktree: true, expectedArtifactId: null },
 });
 
 describe("M1C approval action hashing", () => {
@@ -175,12 +214,23 @@ describe("M1C approval action hashing", () => {
     // Cyrillic 'a' is visually similar to Latin 'a' but is not a valid trusted identifier.
     expect(parseApprovalAction({ ...action(), taskId: "t\u0430sk-42" }).ok).toBe(false);
   });
+
+  it("bounds worker manifest versions while preserving normal semver core values", () => {
+    const max = `${"9".repeat(10)}.${"8".repeat(10)}.${"7".repeat(10)}`;
+    expect(max).toHaveLength(APPROVAL_SECURITY_LIMITS.maxManifestVersionLength);
+    expect(parseApprovalAction(workerDispatchAction(max)).ok).toBe(true);
+    expect(parseApprovalAction(workerDispatchAction(`${max}0`)).ok).toBe(false);
+    expect(parseApprovalAction(workerDispatchAction(`${"1".repeat(10_000)}.0.0`)).ok).toBe(false);
+    expect(parseApprovalAction(workerDispatchAction("1..0")).ok).toBe(false);
+    expect(parseApprovalAction(workerDispatchAction("1.0.x")).ok).toBe(false);
+    expect(parseApprovalAction(workerDispatchAction("1.0.0")).ok).toBe(true);
+  });
 });
 
 describe("M1C capability grants", () => {
   it("verifies a correctly authenticated, exact, unconsumed grant", () => {
     const actionDigest = digest(action());
-    const result = verifyCapabilityGrant(signedGrant(actionDigest), expectation(actionDigest), { keyId: KEY_ID, secret: KEY });
+    const result = verifyCapabilityGrant(signedGrant(actionDigest), expectation(actionDigest), AUTHENTICATOR);
     expect(result.ok && result.code).toBe("VALID");
   });
 
@@ -192,7 +242,7 @@ describe("M1C capability grants", () => {
       ["2026-07-20T10:10:00Z", "EXPIRED"],
       ["2026-07-20T10:10:01Z", "EXPIRED"],
     ] as const) {
-      const result = verifyCapabilityGrant(grant, expectation(actionDigest, { now }), { keyId: KEY_ID, secret: KEY });
+      const result = verifyCapabilityGrant(grant, expectation(actionDigest, { now }), AUTHENTICATOR);
       expect(result.ok ? result.code : result.code).toBe(code);
     }
   });
@@ -208,25 +258,84 @@ describe("M1C capability grants", () => {
       [{ intendedVerifier: "bridge-02" }, "WRONG_INTENDED_VERIFIER"],
     ];
     for (const [override, code] of checks) {
-      const result = verifyCapabilityGrant(grant, expectation(actionDigest, override), { keyId: KEY_ID, secret: KEY });
+      const result = verifyCapabilityGrant(grant, expectation(actionDigest, override), AUTHENTICATOR);
       expect(result.ok ? result.code : result.code).toBe(code);
     }
     const tampered = { ...grant, taskId: "task-43" };
-    expect(verifyCapabilityGrant(tampered, expectation(actionDigest, { taskId: "task-43" }), { keyId: KEY_ID, secret: KEY })).toMatchObject({ code: "AUTHENTICATION_FAILED" });
+    expect(verifyCapabilityGrant(tampered, expectation(actionDigest, { taskId: "task-43" }), AUTHENTICATOR)).toMatchObject({ code: "AUTHENTICATION_FAILED" });
     const malformed = { ...grant, authentication: { ...grant.authentication, signature: "*" } };
-    expect(verifyCapabilityGrant(malformed, expectation(actionDigest), { keyId: KEY_ID, secret: KEY })).toMatchObject({ code: "MALFORMED_GRANT" });
+    expect(verifyCapabilityGrant(malformed, expectation(actionDigest), AUTHENTICATOR)).toMatchObject({ code: "MALFORMED_GRANT" });
     const consumed = { grantId: grant.grantId, actionDigest, operationId: grant.operationId, consumedAt: "2026-07-20T10:05:00Z", outcomeRef: "result-01" };
-    expect(verifyCapabilityGrant(grant, expectation(actionDigest), { keyId: KEY_ID, secret: KEY }, consumed)).toMatchObject({ code: "ALREADY_CONSUMED" });
+    expect(verifyCapabilityGrant(grant, expectation(actionDigest), AUTHENTICATOR, consumed)).toMatchObject({ code: "ALREADY_CONSUMED" });
     expect(classifyGrantConsumption(grant.grantId, actionDigest, consumed)).toBe("duplicate-delivery");
     expect(classifyGrantConsumption(grant.grantId, actionDigest, undefined)).toBe("eligible");
-    expect(verifyCapabilityGrant({ ...grant, grantVersion: "2.0" }, expectation(actionDigest), { keyId: KEY_ID, secret: KEY })).toMatchObject({ code: "UNSUPPORTED_VERSION" });
+    const throwingConsumption = new Proxy({}, { get: () => { throw new Error("hostile"); } });
+    expect(() => classifyGrantConsumption(grant.grantId, actionDigest, throwingConsumption)).not.toThrow();
+    expect(classifyGrantConsumption(grant.grantId, actionDigest, throwingConsumption)).toBe("eligible");
+    expect(verifyCapabilityGrant({ ...grant, grantVersion: "2.0" }, expectation(actionDigest), AUTHENTICATOR)).toMatchObject({ code: "UNSUPPORTED_VERSION" });
+  });
+
+  it("accepts only canonical HMAC-SHA-256 signature encodings", () => {
+    const actionDigest = digest(action());
+    const grant = signedGrant(actionDigest);
+    expect(verifyCapabilityGrant(grant, expectation(actionDigest), AUTHENTICATOR)).toMatchObject({ code: "VALID" });
+
+    const nonCanonicalTrailingBits = mutateSignature(grant.authentication.signature, 1);
+    const tamperedCanonical = mutateSignature(grant.authentication.signature, 4);
+    const signatures = [
+      nonCanonicalTrailingBits,
+      `${grant.authentication.signature}=`,
+      grant.authentication.signature.slice(1),
+      `${grant.authentication.signature}A`,
+      "*".repeat(43),
+    ];
+    for (const signature of signatures) {
+      expect(
+        verifyCapabilityGrant(
+          { ...grant, authentication: { ...grant.authentication, signature } },
+          expectation(actionDigest),
+          AUTHENTICATOR,
+        ),
+      ).toMatchObject({ code: "MALFORMED_GRANT" });
+    }
+    expect(
+      verifyCapabilityGrant(
+        { ...grant, authentication: { ...grant.authentication, signature: tamperedCanonical } },
+        expectation(actionDigest),
+        AUTHENTICATOR,
+      ),
+    ).toMatchObject({ code: "AUTHENTICATION_FAILED" });
+  });
+
+  it("keeps verifier inputs total for throwing expectation and authenticator objects", () => {
+    const actionDigest = digest(action());
+    const grant = signedGrant(actionDigest);
+    const throwingExpectation = new Proxy({}, { get: () => { throw new Error("hostile"); } });
+    const throwingAuthenticator = new Proxy({}, { get: () => { throw new Error("hostile"); } });
+    expect(() => verifyCapabilityGrant(grant, throwingExpectation, AUTHENTICATOR)).not.toThrow();
+    expect(verifyCapabilityGrant(grant, throwingExpectation, AUTHENTICATOR)).toMatchObject({ code: "INVALID_EXPECTATION" });
+    expect(() => verifyCapabilityGrant(grant, expectation(actionDigest), throwingAuthenticator)).not.toThrow();
+    expect(verifyCapabilityGrant(grant, expectation(actionDigest), throwingAuthenticator)).toMatchObject({ code: "AUTHENTICATION_FAILED" });
+  });
+
+  it("keeps raw key material out of serialized grant contracts", () => {
+    const actionDigest = digest(action());
+    const grant = signedGrant(actionDigest);
+    expect(CapabilityGrantSchema.safeParse({ ...grant, secret: "not-a-contract-field" }).success).toBe(false);
+    expect(
+      CapabilityGrantSchema.safeParse({
+        ...grant,
+        authentication: { ...grant.authentication, secret: "not-a-contract-field" },
+      }).success,
+    ).toBe(false);
   });
 });
 
 describe("M1C Phase-2 proof binding", () => {
-  const challenge = (actionDigest: string) => ({
+  const challenge = (actionDigest: string, overrides: Record<string, unknown> = {}) => ({
     proofVersion: APPROVAL_PROOF_VERSION,
     challengeId: "challenge-01",
+    challengeDigest: `sha256:${"d".repeat(64)}`,
     actionDigest,
     taskId: "task-42",
     attemptId: "attempt-1",
@@ -234,15 +343,18 @@ describe("M1C Phase-2 proof binding", () => {
     intendedVerifier: "bridge-01",
     issuedAt: "2026-07-20T10:00:00Z",
     expiresAt: "2026-07-20T10:05:00Z",
+    ...overrides,
   });
-  const proof = (actionDigest: string) => ({
+  const proof = (actionDigest: string, overrides: Record<string, unknown> = {}) => ({
     proofVersion: APPROVAL_PROOF_VERSION,
     proofId: "proof-01",
     challengeId: "challenge-01",
+    challengeDigest: `sha256:${"d".repeat(64)}`,
     actionDigest,
     taskId: "task-42",
     attemptId: "attempt-1",
     operationId: "op-prepare-1",
+    intendedVerifier: "bridge-01",
     issuedAt: "2026-07-20T10:00:00Z",
     expiresAt: "2026-07-20T10:05:00Z",
     ownerPresence: "present",
@@ -252,8 +364,10 @@ describe("M1C Phase-2 proof binding", () => {
       credentialId: "a".repeat(43),
       authenticatorDataDigest: `sha256:${"a".repeat(64)}`,
       clientDataDigest: `sha256:${"b".repeat(64)}`,
+      clientDataChallengeDigest: `sha256:${"d".repeat(64)}`,
       signature: "c".repeat(86),
     },
+    ...overrides,
   });
 
   it("binds proof freshness and action exactly, preventing an action-reuse attempt", () => {
@@ -266,5 +380,56 @@ describe("M1C Phase-2 proof binding", () => {
     expect(parseApprovalProof({ ...proof(actionDigest), proofVersion: "9.0" })).toMatchObject({ ok: false, error: { code: "UNSUPPORTED_PROOF_VERSION" } });
     const C = String.fromCharCode;
     expect(() => parseApprovalProof({ ...proof(actionDigest), proofId: `bad${C(1)}` })).not.toThrow();
+  });
+
+  it("binds verifier, nonce digest, challenge identity, and client-data evidence", () => {
+    const actionDigest = digest(action());
+    const alternateDigest = `sha256:${"e".repeat(64)}`;
+    expect(
+      verifyApprovalProofBinding(
+        proof(actionDigest, { intendedVerifier: "bridge-02" }),
+        challenge(actionDigest),
+        "2026-07-20T10:02:00Z",
+      ),
+    ).toMatchObject({ code: "WRONG_INTENDED_VERIFIER" });
+    expect(
+      verifyApprovalProofBinding(
+        proof(actionDigest, { challengeDigest: alternateDigest }),
+        challenge(actionDigest),
+        "2026-07-20T10:02:00Z",
+      ),
+    ).toMatchObject({ code: "CHALLENGE_DIGEST_MISMATCH" });
+    expect(
+      verifyApprovalProofBinding(
+        proof(actionDigest, {
+          assertion: {
+            ...proof(actionDigest).assertion,
+            clientDataChallengeDigest: alternateDigest,
+          },
+        }),
+        challenge(actionDigest),
+        "2026-07-20T10:02:00Z",
+      ),
+    ).toMatchObject({ code: "CLIENT_DATA_CHALLENGE_MISMATCH" });
+    expect(
+      verifyApprovalProofBinding(
+        proof(actionDigest, { challengeId: "challenge-02" }),
+        challenge(actionDigest),
+        "2026-07-20T10:02:00Z",
+      ),
+    ).toMatchObject({ code: "CHALLENGE_MISMATCH" });
+    const otherActionDigest = digest({ ...action(), constraints: { timeoutSec: 121, requiresCleanWorktree: true, expectedArtifactId: null } });
+    expect(
+      verifyApprovalProofBinding(proof(actionDigest), challenge(otherActionDigest), "2026-07-20T10:02:00Z"),
+    ).toMatchObject({ code: "ACTION_HASH_MISMATCH" });
+  });
+
+  it("keeps proof and challenge verification total for hostile inputs", () => {
+    const actionDigest = digest(action());
+    const throwing = new Proxy({}, { get: () => { throw new Error("hostile"); } });
+    expect(() => verifyApprovalProofBinding(throwing, challenge(actionDigest), "2026-07-20T10:02:00Z")).not.toThrow();
+    expect(verifyApprovalProofBinding(throwing, challenge(actionDigest), "2026-07-20T10:02:00Z")).toMatchObject({ code: "MALFORMED_PROOF" });
+    expect(() => verifyApprovalProofBinding(proof(actionDigest), throwing, "2026-07-20T10:02:00Z")).not.toThrow();
+    expect(verifyApprovalProofBinding(proof(actionDigest), throwing, "2026-07-20T10:02:00Z")).toMatchObject({ code: "MALFORMED_CHALLENGE" });
   });
 });

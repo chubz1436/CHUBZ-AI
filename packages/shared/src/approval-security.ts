@@ -1,4 +1,4 @@
-import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import { createHash } from "node:crypto";
 import { z } from "zod";
 import { canonicalizeForDigest } from "./protocol/digest-internal.js";
 import {
@@ -27,6 +27,7 @@ export const APPROVAL_SECURITY_LIMITS = Object.freeze({
   maxGrantLifetimeMs: 10 * 60 * 1000,
   maxProofChallengeLifetimeMs: 5 * 60 * 1000,
   maxTimeoutSec: 86_400,
+  maxManifestVersionLength: 32,
 } as const);
 
 const DIGEST_RE = /^sha256:[0-9a-f]{64}$/;
@@ -38,11 +39,34 @@ export const ActionDigestSchema = z
   .regex(DIGEST_RE, "must be a sha256 digest with lowercase hexadecimal output");
 export type ActionDigest = z.infer<typeof ActionDigestSchema>;
 
-const Base64UrlSignatureSchema = z
+const HMAC_SHA256_SIGNATURE_BYTES = 32;
+const HMAC_SHA256_SIGNATURE_LENGTH = 43;
+
+/**
+ * Canonical unpadded base64url representation of exactly one HMAC-SHA-256
+ * output. The round trip rejects Node's otherwise permissive decoder input,
+ * including padding and altered unused trailing bits.
+ */
+const HmacSha256SignatureSchema = z
   .string()
-  .min(43)
-  .max(1024)
-  .regex(BASE64URL_RE, "must be base64url without padding");
+  .length(HMAC_SHA256_SIGNATURE_LENGTH)
+  .regex(BASE64URL_RE, "must be unpadded base64url")
+  .superRefine((value, ctx) => {
+    try {
+      const decoded = Buffer.from(value, "base64url");
+      if (
+        decoded.length !== HMAC_SHA256_SIGNATURE_BYTES ||
+        decoded.toString("base64url") !== value
+      ) {
+        ctx.addIssue({ code: "custom", message: "must be canonical HMAC-SHA-256 base64url" });
+      }
+    } catch {
+      ctx.addIssue({ code: "custom", message: "must be canonical HMAC-SHA-256 base64url" });
+    }
+  });
+
+/** Bounded base64url evidence for public-key assertion fields (not a MAC). */
+const Base64UrlEvidenceSchema = z.string().min(1).max(1024).regex(BASE64URL_RE, "must be base64url without padding");
 
 const ActionConstraintsSchema = z.strictObject({
   /** Bound execution limit; it is part of the approved action. */
@@ -83,7 +107,10 @@ const WorkerDispatchActionSchema = z.strictObject({
     workspaceId: SafeIdSchema,
     worker: z.strictObject({
       manifestId: SlugIdSchema,
-      manifestVersion: z.string().regex(/^[0-9]+\.[0-9]+\.[0-9]+$/, "must be semver core"),
+      manifestVersion: z
+        .string()
+        .max(APPROVAL_SECURITY_LIMITS.maxManifestVersionLength)
+        .regex(/^[0-9]+\.[0-9]+\.[0-9]+$/, "must be bounded semver core"),
     }),
     /** Redacted instruction/content digest; raw prompt text is never an approval authority. */
     instructionDigest: ActionDigestSchema,
@@ -169,9 +196,11 @@ export const APPROVAL_CONTRACT_ERROR_CODES = Object.freeze([
   "MALFORMED_ACTION",
   "MALFORMED_GRANT",
   "MALFORMED_PROOF",
+  "MALFORMED_CHALLENGE",
   "UNSUPPORTED_ACTION_VERSION",
   "UNSUPPORTED_GRANT_VERSION",
   "UNSUPPORTED_PROOF_VERSION",
+  "UNSUPPORTED_CHALLENGE_VERSION",
   "INVALID_EXPECTATION",
   "CANONICALIZATION_FAILED",
 ] as const);
@@ -248,7 +277,7 @@ export function digestApprovalAction(raw: unknown): ApprovalParseResult<ActionDi
 const GrantAuthenticationSchema = z.strictObject({
   algorithm: z.literal("hmac-sha256"),
   keyId: SafeIdSchema,
-  signature: Base64UrlSignatureSchema,
+  signature: HmacSha256SignatureSchema,
 });
 
 /** Phase-1 HMAC grant.  Its approval reference is provenance, not owner-presence proof. */
@@ -338,10 +367,20 @@ export type GrantVerificationResult =
   | { readonly ok: true; readonly code: "VALID"; readonly grant: CapabilityGrant }
   | { readonly ok: false; readonly code: Exclude<GrantVerificationCode, "VALID"> };
 
-/** Verification material is runtime-only input, never part of a grant or error contract. */
-export interface GrantVerificationKey {
-  readonly keyId: string;
-  readonly secret: Uint8Array;
+/**
+ * Narrow runtime authentication boundary. The shared public API carries no
+ * secret bytes or signing capability: the future key store/runtime receives
+ * this canonical authenticated payload and returns only a verification result.
+ * Implementations must perform a constant-time MAC-byte comparison after the
+ * shared contract has rejected non-canonical signature encodings.
+ */
+export interface GrantAuthenticationVerifier {
+  readonly verify: (input: Readonly<{
+    algorithm: "hmac-sha256";
+    keyId: string;
+    payload: string;
+    signature: Uint8Array;
+  }>) => boolean;
 }
 
 const grantAuthenticationPayload = (grant: CapabilityGrant): string =>
@@ -363,23 +402,25 @@ const grantAuthenticationPayload = (grant: CapabilityGrant): string =>
     authentication: { algorithm: grant.authentication.algorithm, keyId: grant.authentication.keyId },
   });
 
-const equalBase64Url = (left: string, right: string): boolean => {
+const verifyGrantAuthentication = (
+  grant: CapabilityGrant,
+  rawAuthenticator: unknown,
+): boolean => {
   try {
-    const a = Buffer.from(left, "base64url");
-    const b = Buffer.from(right, "base64url");
-    return a.length === b.length && timingSafeEqual(a, b);
-  } catch {
-    return false;
-  }
-};
-
-const verifyGrantAuthentication = (grant: CapabilityGrant, key: GrantVerificationKey): boolean => {
-  try {
-    if (key.keyId !== grant.authentication.keyId || !(key.secret instanceof Uint8Array)) return false;
-    const signature = createHmac("sha256", key.secret)
-      .update(grantAuthenticationPayload(grant), "utf8")
-      .digest("base64url");
-    return equalBase64Url(signature, grant.authentication.signature);
+    if (typeof rawAuthenticator !== "object" || rawAuthenticator === null) return false;
+    const verify = (rawAuthenticator as { verify?: unknown }).verify;
+    if (typeof verify !== "function") return false;
+    const signature = Buffer.from(grant.authentication.signature, "base64url");
+    if (signature.length !== HMAC_SHA256_SIGNATURE_BYTES) return false;
+    return verify.call(
+      rawAuthenticator,
+      Object.freeze({
+        algorithm: grant.authentication.algorithm,
+        keyId: grant.authentication.keyId,
+        payload: grantAuthenticationPayload(grant),
+        signature,
+      }),
+    ) === true;
   } catch {
     return false;
   }
@@ -393,8 +434,8 @@ const verifyGrantAuthentication = (grant: CapabilityGrant, key: GrantVerificatio
 export function verifyCapabilityGrant(
   rawGrant: unknown,
   rawExpectation: unknown,
-  key: GrantVerificationKey,
-  consumed?: GrantConsumption,
+  authenticator: unknown,
+  consumed?: unknown,
 ): GrantVerificationResult {
   const grantResult = parseCapabilityGrant(rawGrant);
   if (!grantResult.ok) {
@@ -403,7 +444,12 @@ export function verifyCapabilityGrant(
       code: grantResult.error.code === "UNSUPPORTED_GRANT_VERSION" ? "UNSUPPORTED_VERSION" : "MALFORMED_GRANT",
     });
   }
-  const expected = GrantExpectationSchema.safeParse(rawExpectation);
+  let expected: ReturnType<typeof GrantExpectationSchema.safeParse> | undefined;
+  try {
+    expected = GrantExpectationSchema.safeParse(rawExpectation);
+  } catch {
+    return Object.freeze({ ok: false, code: "INVALID_EXPECTATION" });
+  }
   if (!expected.success) return Object.freeze({ ok: false, code: "INVALID_EXPECTATION" });
   const grant = grantResult.value;
   if (grant.taskId !== expected.data.taskId) return Object.freeze({ ok: false, code: "TASK_MISMATCH" });
@@ -413,14 +459,19 @@ export function verifyCapabilityGrant(
   if (grant.intendedVerifier !== expected.data.intendedVerifier) {
     return Object.freeze({ ok: false, code: "WRONG_INTENDED_VERIFIER" });
   }
-  if (!verifyGrantAuthentication(grant, key)) {
+  if (!verifyGrantAuthentication(grant, authenticator)) {
     return Object.freeze({ ok: false, code: "AUTHENTICATION_FAILED" });
   }
   const now = Date.parse(expected.data.now);
   if (now < Date.parse(grant.notBefore)) return Object.freeze({ ok: false, code: "NOT_YET_VALID" });
   if (now >= Date.parse(grant.expiresAt)) return Object.freeze({ ok: false, code: "EXPIRED" });
   if (consumed !== undefined) {
-    const stored = GrantConsumptionSchema.safeParse(consumed);
+    let stored: ReturnType<typeof GrantConsumptionSchema.safeParse> | undefined;
+    try {
+      stored = GrantConsumptionSchema.safeParse(consumed);
+    } catch {
+      return Object.freeze({ ok: false, code: "INVALID_EXPECTATION" });
+    }
     if (!stored.success) return Object.freeze({ ok: false, code: "INVALID_EXPECTATION" });
     if (stored.data.grantId === grant.grantId) return Object.freeze({ ok: false, code: "ALREADY_CONSUMED" });
   }
@@ -435,21 +486,32 @@ export function verifyCapabilityGrant(
 export function classifyGrantConsumption(
   grantId: string,
   _actionDigest: string,
-  consumed: GrantConsumption | undefined,
+  consumed: unknown,
 ): "eligible" | "duplicate-delivery" {
   if (consumed === undefined) return "eligible";
-  const record = GrantConsumptionSchema.safeParse(consumed);
+  let record: ReturnType<typeof GrantConsumptionSchema.safeParse> | undefined;
+  try {
+    record = GrantConsumptionSchema.safeParse(consumed);
+  } catch {
+    return "eligible";
+  }
   if (!record.success || record.data.grantId !== grantId) {
     return "eligible";
   }
   return "duplicate-delivery";
 }
 
-/** Bridge-issued, transport-neutral freshness challenge for a future Phase-2 assertion. */
+/**
+ * Bridge-issued, transport-neutral freshness challenge for a future Phase-2
+ * assertion. `challengeDigest` is the SHA-256 digest of the cryptographically
+ * random Bridge nonce in its documented domain. The raw nonce stays in the
+ * future Bridge challenge store and is never an approval authority here.
+ */
 export const ApprovalProofChallengeSchema = z
   .strictObject({
     proofVersion: z.literal(APPROVAL_PROOF_VERSION),
     challengeId: SafeIdSchema,
+    challengeDigest: ActionDigestSchema,
     actionDigest: ActionDigestSchema,
     taskId: SafeIdSchema,
     attemptId: SafeIdSchema,
@@ -468,30 +530,54 @@ export const ApprovalProofChallengeSchema = z
   });
 export type ApprovalProofChallenge = z.infer<typeof ApprovalProofChallengeSchema>;
 
+/** Total hostile-input parser for Bridge-issued Phase-2 challenge records. */
+export function parseApprovalProofChallenge(
+  raw: unknown,
+): ApprovalParseResult<ApprovalProofChallenge> {
+  if (objectVersion(raw, "proofVersion") !== undefined && objectVersion(raw, "proofVersion") !== APPROVAL_PROOF_VERSION) {
+    return failure("UNSUPPORTED_CHALLENGE_VERSION", "The approval challenge version is not supported.");
+  }
+  try {
+    const parsed = ApprovalProofChallengeSchema.safeParse(raw);
+    return parsed.success
+      ? Object.freeze({ ok: true, value: parsed.data })
+      : failure("MALFORMED_CHALLENGE", "The approval challenge failed validation.");
+  } catch {
+    return failure("MALFORMED_CHALLENGE", "The approval challenge failed validation.");
+  }
+}
+
 /**
  * Future WebAuthn assertion binding. Signature/digests are public-key
  * assertion data, not credentials, cookies, sessions, or private keys.
- * M1C deliberately does not verify a WebAuthn ceremony.
+ * M1C deliberately does not verify a WebAuthn ceremony. A future Bridge
+ * verifier MUST derive the challenge digest from the actual stored nonce and
+ * from `clientDataJSON.challenge`; the client-supplied evidence fields below
+ * are claims only and never substitute for that cryptographic verification.
  */
 export const ApprovalProofSchema = z
   .strictObject({
     proofVersion: z.literal(APPROVAL_PROOF_VERSION),
     proofId: SafeIdSchema,
     challengeId: SafeIdSchema,
+    challengeDigest: ActionDigestSchema,
     actionDigest: ActionDigestSchema,
     taskId: SafeIdSchema,
     attemptId: SafeIdSchema,
     operationId: SafeIdSchema,
+    intendedVerifier: SafeIdSchema,
     issuedAt: IsoUtcTimestampSchema,
     expiresAt: IsoUtcTimestampSchema,
     ownerPresence: z.literal("present"),
     ownerVerification: z.literal("verified"),
     assertion: z.strictObject({
       format: z.literal("webauthn-assertion-v1"),
-      credentialId: Base64UrlSignatureSchema,
+      credentialId: Base64UrlEvidenceSchema,
       authenticatorDataDigest: ActionDigestSchema,
       clientDataDigest: ActionDigestSchema,
-      signature: Base64UrlSignatureSchema,
+      /** Claimed digest extracted from clientDataJSON.challenge; verify it against the real nonce later. */
+      clientDataChallengeDigest: ActionDigestSchema,
+      signature: Base64UrlEvidenceSchema,
     }),
   })
   .superRefine((proof, ctx) => {
@@ -508,9 +594,12 @@ export const APPROVAL_PROOF_BINDING_CODES = Object.freeze([
   "UNSUPPORTED_VERSION",
   "ACTION_HASH_MISMATCH",
   "CHALLENGE_MISMATCH",
+  "CHALLENGE_DIGEST_MISMATCH",
+  "CLIENT_DATA_CHALLENGE_MISMATCH",
   "TASK_MISMATCH",
   "ATTEMPT_MISMATCH",
   "OPERATION_MISMATCH",
+  "WRONG_INTENDED_VERIFIER",
   "EXPIRED",
   "NOT_YET_VALID",
 ] as const);
@@ -538,7 +627,7 @@ export function parseApprovalProof(raw: unknown): ApprovalParseResult<ApprovalPr
 export function verifyApprovalProofBinding(
   rawProof: unknown,
   rawChallenge: unknown,
-  now: string,
+  now: unknown,
 ): ApprovalProofBindingResult {
   const proofResult = parseApprovalProof(rawProof);
   if (!proofResult.ok) {
@@ -547,20 +636,42 @@ export function verifyApprovalProofBinding(
       code: proofResult.error.code === "UNSUPPORTED_PROOF_VERSION" ? "UNSUPPORTED_VERSION" : "MALFORMED_PROOF",
     });
   }
-  const challenge = ApprovalProofChallengeSchema.safeParse(rawChallenge);
-  if (!challenge.success) return Object.freeze({ ok: false, code: "MALFORMED_CHALLENGE" });
-  if (!IsoUtcTimestampSchema.safeParse(now).success) return Object.freeze({ ok: false, code: "NOT_YET_VALID" });
-  const proof = proofResult.value;
-  if (proof.challengeId !== challenge.data.challengeId) return Object.freeze({ ok: false, code: "CHALLENGE_MISMATCH" });
-  if (proof.actionDigest !== challenge.data.actionDigest) return Object.freeze({ ok: false, code: "ACTION_HASH_MISMATCH" });
-  if (proof.taskId !== challenge.data.taskId) return Object.freeze({ ok: false, code: "TASK_MISMATCH" });
-  if (proof.attemptId !== challenge.data.attemptId) return Object.freeze({ ok: false, code: "ATTEMPT_MISMATCH" });
-  if (proof.operationId !== challenge.data.operationId) return Object.freeze({ ok: false, code: "OPERATION_MISMATCH" });
-  const current = Date.parse(now);
-  if (current < Date.parse(proof.issuedAt) || current < Date.parse(challenge.data.issuedAt)) {
+  const challengeResult = parseApprovalProofChallenge(rawChallenge);
+  if (!challengeResult.ok) {
+    return Object.freeze({
+      ok: false,
+      code:
+        challengeResult.error.code === "UNSUPPORTED_CHALLENGE_VERSION"
+          ? "UNSUPPORTED_VERSION"
+          : "MALFORMED_CHALLENGE",
+    });
+  }
+  let parsedNow: ReturnType<typeof IsoUtcTimestampSchema.safeParse> | undefined;
+  try {
+    parsedNow = IsoUtcTimestampSchema.safeParse(now);
+  } catch {
     return Object.freeze({ ok: false, code: "NOT_YET_VALID" });
   }
-  if (current >= Date.parse(proof.expiresAt) || current >= Date.parse(challenge.data.expiresAt)) {
+  if (!parsedNow.success) return Object.freeze({ ok: false, code: "NOT_YET_VALID" });
+  const challenge = challengeResult.value;
+  const proof = proofResult.value;
+  if (proof.challengeId !== challenge.challengeId) return Object.freeze({ ok: false, code: "CHALLENGE_MISMATCH" });
+  if (proof.challengeDigest !== challenge.challengeDigest) return Object.freeze({ ok: false, code: "CHALLENGE_DIGEST_MISMATCH" });
+  if (proof.assertion.clientDataChallengeDigest !== challenge.challengeDigest) {
+    return Object.freeze({ ok: false, code: "CLIENT_DATA_CHALLENGE_MISMATCH" });
+  }
+  if (proof.intendedVerifier !== challenge.intendedVerifier) {
+    return Object.freeze({ ok: false, code: "WRONG_INTENDED_VERIFIER" });
+  }
+  if (proof.actionDigest !== challenge.actionDigest) return Object.freeze({ ok: false, code: "ACTION_HASH_MISMATCH" });
+  if (proof.taskId !== challenge.taskId) return Object.freeze({ ok: false, code: "TASK_MISMATCH" });
+  if (proof.attemptId !== challenge.attemptId) return Object.freeze({ ok: false, code: "ATTEMPT_MISMATCH" });
+  if (proof.operationId !== challenge.operationId) return Object.freeze({ ok: false, code: "OPERATION_MISMATCH" });
+  const current = Date.parse(parsedNow.data);
+  if (current < Date.parse(proof.issuedAt) || current < Date.parse(challenge.issuedAt)) {
+    return Object.freeze({ ok: false, code: "NOT_YET_VALID" });
+  }
+  if (current >= Date.parse(proof.expiresAt) || current >= Date.parse(challenge.expiresAt)) {
     return Object.freeze({ ok: false, code: "EXPIRED" });
   }
   return Object.freeze({ ok: true, code: "VALID", proof });
