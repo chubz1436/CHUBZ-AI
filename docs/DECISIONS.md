@@ -4,6 +4,10 @@
 
 This file is the decision log. An entry marked **ACCEPTED BY OWNER** records a decision Kenneth / CHUBZ has approved. Acceptance of a design decision does **not** by itself authorize implementation, deployment, infrastructure configuration, or production access; each implementation phase carries its own explicit owner GO.
 
+**M1D activation (2026-07-20):** M1D Redaction Library received explicit owner GO and is active, unaccepted, on `task/m1d-redaction-library`; Codex is the current worker. M1A-M1C remain complete and accepted. M1D is restricted to pure shared redaction contracts/detectors/tests and excludes runtime integration, filesystem/network access, credentials, capture, Bridge, database, UI, and operations. Completion requires independent review and separate owner acceptance. M1E, M1F, M2, and later milestones remain unauthorized.
+
+The following M1C acceptance paragraph predates the M1D GO; its statement that M1D was unauthorized is superseded by this activation record.
+
 **Current milestone status (2026-07-20):** M1C received explicit owner/Bantay acceptance after an independent security re-review PASS; accepted implementation commits are `769677dd7ee876a4ecbda08bb3674b6fa8a9a82a` and `cdffc0170facedb4c9791619a0adabc86e7f6f50`, with 329 tests and typecheck passing during the accepted review. Runtime key storage, persistent atomic grant consumption, WebAuthn ceremony, and Bridge execution remain deferred; M1D, M1E, M1F, M2, and all later milestones remain unauthorized pending separate explicit GO.
 
 Decisions D-006 … D-018 correspond to proposals P-006 … P-018 in [FINAL_ARCHITECTURE_DESIGN.md](FINAL_ARCHITECTURE_DESIGN.md) §22, as revised following Bantay's required design revisions (2026-07-10). Where the design documents and this log ever disagree, this log governs the decision and the design documents govern the detail.

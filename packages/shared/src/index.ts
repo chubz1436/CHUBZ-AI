@@ -16,3 +16,4 @@ export * from "./commands.js";
 export * from "./worker-manifest.js";
 export * from "./protocol/index.js";
 export * from "./approval-security.js";
+export * from "./redaction.js";

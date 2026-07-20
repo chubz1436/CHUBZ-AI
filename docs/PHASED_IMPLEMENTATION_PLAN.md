@@ -8,6 +8,8 @@
 
 Worker roles throughout (D-005, D-019, D-027): **Codex** is the current primary implementation worker; **BUNSO** remains the lead architecture designer and governing architecture source; **Bantay** reviews security, scope, and completeness; **Antigravity** is secondary and capability-probed; and **Chubz** approves every phase gate. No workers edit the same files concurrently. A task-specific assignment never overrides owner or repository policy.
 
+> **M1D STATUS (2026-07-20):** Explicit owner GO received. M1D Redaction Library is active and unaccepted on `task/m1d-redaction-library`, with Codex as worker. It is limited to pure shared denylist, detector, redaction-contract, corpus-test, and export work; runtime context/capture/Bridge/log/artifact/UI/database/filesystem/network work is excluded. M1A-M1C remain accepted. M1E, M1F, M2, and later milestones remain unauthorized. M1D completion requires independent review and separate owner acceptance.
+
 ---
 
 ## Phase 0 — Design Acceptance and Local Prerequisites

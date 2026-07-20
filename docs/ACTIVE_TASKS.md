@@ -1,6 +1,6 @@
 # Active Tasks
 
-> **STATUS: M1A, M1B, AND M1C APPROVAL-SECURITY CONTRACTS ACCEPTED AND MERGED INTO `main`. M1D AND LATER MILESTONES ARE NOT STARTED OR AUTHORIZED.**
+> **STATUS: M1A-M1C ACCEPTED ON `main`. M1D REDACTION LIBRARY IS ACTIVE AND UNACCEPTED ON `task/m1d-redaction-library` UNDER EXPLICIT OWNER GO. M1E, M1F, M2, AND LATER MILESTONES ARE NOT STARTED OR AUTHORIZED.**
 
 ## Project lifecycle status
 
@@ -34,3 +34,9 @@ M1A Core Contracts and M1B Protocol Contracts are completed and merged into `mai
 **M1C is complete and accepted on `main` after explicit owner/Bantay approval and independent security re-review PASS.** M1D, M1E, M1F, M2, and all later milestones remain not started and unauthorized; the next milestone requires a separate explicit GO.
 
 Nothing in this file authorizes runtime orchestration, worker connection, domain or tunnel configuration, server access, MikroTik access, deployment, restart, infrastructure changes, or production actions.
+
+## M1D activation record
+
+M1D Redaction Library received explicit owner GO and is active on `task/m1d-redaction-library`; Codex is the current worker. M1A-M1C remain complete and accepted. M1D scope is pure denylist classification, bounded pattern/entropy detection, safe redaction contracts, synthetic corpus tests, and public exports. It excludes runtime context assembly, capture, Bridge, logs, artifacts, UI, database, filesystem/network access, credentials, deployment, and operations. M1D is unaccepted: independent review and separate owner acceptance are required. M1E, M1F, M2, and later milestones remain not started and unauthorized.
+
+This activation record supersedes older M1D-pending wording elsewhere in this historical status document.
