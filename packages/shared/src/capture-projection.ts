@@ -3,6 +3,7 @@ import { z } from "zod";
 import { canonicalizeForDigest } from "./protocol/digest-internal.js";
 import { IsoUtcTimestampSchema, SafeIdSchema, SlugIdSchema, displayText } from "./protocol/common.js";
 import { detectRedactions } from "./redaction.js";
+import { TaskStateSchema } from "./task-states.js";
 import { ProvenanceModeSchema } from "./worker-manifest.js";
 
 /**
@@ -68,13 +69,27 @@ const AutomatedSnapshotProvenanceSchema = z.strictObject({ mode: z.literal("auto
 const ManualSnapshotProvenanceSchema = z.strictObject({ mode: z.literal("owner-attested"), connectorType: z.literal("manual-relay"), workerId: SlugIdSchema });
 const SnapshotProvenanceSchema = z.discriminatedUnion("mode", [AutomatedSnapshotProvenanceSchema, ManualSnapshotProvenanceSchema]);
 type SnapshotProvenance = z.infer<typeof SnapshotProvenanceSchema>;
+const hasIndependentActorProvenance = (source: SnapshotProvenance, actor: SnapshotProvenance): boolean => {
+  if (source.workerId === actor.workerId || source.connectorType === actor.connectorType) return false;
+  if (source.mode === "automated" && actor.mode === "automated") {
+    if (source.adapterId === actor.adapterId) return false;
+    if (source.adapterRunId !== null && source.adapterRunId === actor.adapterRunId) return false;
+  }
+  return true;
+};
 const SnapshotSubjectSchema = z.strictObject({
   taskId: SafeIdSchema, attemptId: SafeIdSchema, operationId: OptionalId, artifactId: SafeIdSchema, captureId: SafeIdSchema,
   reviewId: OptionalId, contentHash: HashSchema, sourceProvenance: SnapshotProvenanceSchema,
 });
 type SnapshotSubject = z.infer<typeof SnapshotSubjectSchema>;
-const TrustedObservationSchema = z.strictObject({ evidenceId: EvidenceRefSchema, kind: z.literal("observed"), subject: SnapshotSubjectSchema, observerId: SafeIdSchema, observationMethod: z.enum(["connector", "adapter", "runtime"]) }).refine((v) => v.subject.reviewId === null, "capture observations cannot be review-scoped");
-const TrustedValidationSchema = z.strictObject({ evidenceId: EvidenceRefSchema, kind: z.literal("validated"), subject: SnapshotSubjectSchema, validatorId: SafeIdSchema, validatedCaptureId: SafeIdSchema, validationResult: z.enum(["passed", "failed", "inconclusive"]) });
+const ObservationSourceSchema = z.enum(["connector", "adapter", "runtime"]);
+const TrustedObservationSchema = z.strictObject({ evidenceId: EvidenceRefSchema, kind: z.literal("observed"), subject: SnapshotSubjectSchema, observerId: SafeIdSchema, observerProvenance: SnapshotProvenanceSchema, observationMethod: ObservationSourceSchema }).superRefine((v, ctx) => {
+  if (v.subject.reviewId !== null) ctx.addIssue({ code: "custom", path: ["subject", "reviewId"], message: "capture observations cannot be review-scoped" });
+  if (!hasIndependentActorProvenance(v.subject.sourceProvenance, v.observerProvenance)) ctx.addIssue({ code: "custom", path: ["observerProvenance"], message: "observer provenance must be independent from capture provenance" });
+});
+const TrustedValidationSchema = z.strictObject({ evidenceId: EvidenceRefSchema, kind: z.literal("validated"), subject: SnapshotSubjectSchema, validatorId: SafeIdSchema, validatorProvenance: SnapshotProvenanceSchema, validationSource: ObservationSourceSchema, validatedCaptureId: SafeIdSchema, validationResult: z.enum(["passed", "failed", "inconclusive"]) }).superRefine((v, ctx) => {
+  if (!hasIndependentActorProvenance(v.subject.sourceProvenance, v.validatorProvenance)) ctx.addIssue({ code: "custom", path: ["validatorProvenance"], message: "validator provenance must be independent from capture provenance" });
+});
 const TrustedManualImportSchema = z.strictObject({ evidenceId: EvidenceRefSchema, kind: z.literal("manual-import"), subject: SnapshotSubjectSchema, ownerAttestationId: SafeIdSchema, importMode: z.literal("reviewed-artifact-import") }).refine((v) => v.subject.reviewId === null && v.subject.sourceProvenance.mode === "owner-attested", "manual imports must bind owner-attested artifact provenance");
 const TrustedProducerSchema = z.strictObject({ evidenceId: EvidenceRefSchema, kind: z.literal("producer"), subject: SnapshotSubjectSchema, producerCaptureId: SafeIdSchema }).refine((v) => v.subject.reviewId === null, "producer evidence cannot be review-scoped");
 const TrustedInclusionSchema = z.strictObject({ evidenceId: EvidenceRefSchema, kind: z.literal("inclusion"), subject: SnapshotSubjectSchema, sourceEvidenceId: EvidenceRefSchema }).refine((v) => v.subject.reviewId !== null, "inclusion evidence must bind one review package");
@@ -89,7 +104,7 @@ const TrustedQuotaPolicySchema = z.strictObject({
 }).superRefine((v, ctx) => { if ((v.retentionClass === "hold") !== (v.expiresAt === null)) ctx.addIssue({ code: "custom", path: ["expiresAt"], message: "retention expiry conflicts with class" }); });
 const TrustedQuotaObservationSchema = z.strictObject({
   observationId: SafeIdSchema, evidenceId: EvidenceRefSchema, policyId: SafeIdSchema, policyVersion: SafeIdSchema,
-  source: z.enum(["connector", "adapter", "runtime", "owner-accounting"]), confidence: z.enum(["observed", "validated"]),
+  source: ObservationSourceSchema, confidence: z.enum(["observed", "validated"]),
   taskId: SafeIdSchema, attemptId: SafeIdSchema, operationId: OptionalId, artifactId: SafeIdSchema, captureId: SafeIdSchema, contentHash: HashSchema,
   artifactBytes: z.number().int().min(0).max(CAPTURE_LIMITS.maxBytes), taskBytes: z.number().int().min(0).max(CAPTURE_LIMITS.maxBytes), taskArtifactCount: z.number().int().min(0).max(CAPTURE_LIMITS.maxArtifacts),
 });
@@ -141,7 +156,7 @@ export type ArtifactMetadata = z.infer<typeof ArtifactMetadataSchema>;
 
 export const BridgeLogFrontMatterSchema = z.strictObject({
   projectionVersion: z.literal(CAPTURE_PROJECTION_VERSION), nonAuthoritative: z.literal(true), taskId: SafeIdSchema, attemptId: SafeIdSchema,
-  projectId: SlugIdSchema, state: SafeIdSchema, createdAt: IsoUtcTimestampSchema, provenanceMode: ProvenanceModeSchema,
+  projectId: SlugIdSchema, state: TaskStateSchema, createdAt: IsoUtcTimestampSchema, provenanceMode: ProvenanceModeSchema,
   approvalIds: z.array(SafeIdSchema).max(CAPTURE_LIMITS.maxArtifacts), artifactIds: z.array(SafeIdSchema).max(CAPTURE_LIMITS.maxArtifacts), reviewId: OptionalId,
   validation: z.enum(["not-run", "claimed", "observed", "validated"]), redaction: RedactionStateSchema, warnings: z.array(SafeNoteSchema).max(CAPTURE_LIMITS.maxNotes), redactionCount: z.number().int().min(0).max(CAPTURE_LIMITS.maxCaptures),
 });
@@ -197,7 +212,6 @@ export const parseReviewPackageManifest = (raw: unknown) => parse(ReviewPackageM
 export const parseAuthoritativeM1ESnapshotShape = (raw: unknown) => parse(AuthoritativeM1ESnapshotShapeSchema, raw, "contextVersion");
 
 const toSnapshotProvenance = (value: WorkerProvenance): SnapshotProvenance => value.mode === "automated" ? { mode: "automated", connectorType: value.connectorType, workerId: value.workerId, adapterId: value.adapterId, adapterRunId: value.adapterRunId } : { mode: "owner-attested", connectorType: "manual-relay", workerId: value.workerId };
-const sameProvenance = (left: SnapshotProvenance, right: WorkerProvenance): boolean => { const expected = toSnapshotProvenance(right); return left.mode === expected.mode && left.workerId === expected.workerId && left.connectorType === expected.connectorType && (left.mode !== "automated" || (expected.mode === "automated" && left.adapterId === expected.adapterId && left.adapterRunId === expected.adapterRunId)); };
 const sameSubject = (entry: TrustedEvidenceSnapshot, expected: SnapshotSubject): boolean => subjectKey(entry.subject) === subjectKey(expected);
 const fail = (code: Extract<CaptureParseCode, "UNTRUSTED_REFERENCE" | "SUBJECT_MISMATCH">): CaptureParseResult<never> => Object.freeze({ ok: false, code });
 const resolveEvidence = (context: AuthoritativeM1ESnapshotShape, ref: string) => context.evidence.find((value) => value.evidenceId === ref);
@@ -217,7 +231,7 @@ export function evaluateCaptureTrust(rawCapture: unknown, rawAuthoritativeSnapsh
     if (!evidence) return fail("UNTRUSTED_REFERENCE");
     if (!sameSubject(evidence, snapshotSubjectForCapture(value))) return fail("SUBJECT_MISMATCH");
     if (value.evidenceClass === "observation-request") return evidence.kind === "observed" && evidence.observerId === value.requestedObserverId && evidence.observationMethod === value.observationMethod && evidence.observerId !== value.provenance.workerId ? trust("observed") : fail("UNTRUSTED_REFERENCE");
-    if (value.evidenceClass === "validation-request") return evidence.kind === "validated" && evidence.validatorId === value.requestedValidatorId && evidence.validatedCaptureId === value.validatedCaptureId && evidence.validationResult === value.validationResult && evidence.validatorId !== value.provenance.workerId ? trust("validated") : fail("UNTRUSTED_REFERENCE");
+    if (value.evidenceClass === "validation-request") return evidence.kind === "validated" && evidence.validatorId === value.requestedValidatorId && evidence.validatedCaptureId === value.validatedCaptureId && evidence.validationResult === "passed" && value.validationResult === "passed" && evidence.validatorId !== value.provenance.workerId ? trust("validated") : fail("UNTRUSTED_REFERENCE");
     return evidence.kind === "manual-import" && evidence.importMode === "reviewed-artifact-import" ? trust("owner-attested") : fail("UNTRUSTED_REFERENCE");
   } catch { return Object.freeze({ ok: false, code: "MALFORMED_INPUT" }); }
 }
@@ -236,11 +250,13 @@ export function evaluateArtifactTrust(rawArtifact: unknown, rawAuthoritativeSnap
     const observation = snapshot.value.quotaObservations.find((item) => item.observationId === value.quotaObservationRef);
     if (!policy || !observation) return fail("UNTRUSTED_REFERENCE");
     const observationEvidence = resolveEvidence(snapshot.value, observation.evidenceId);
-    if (!observationEvidence || (observationEvidence.kind !== "observed" && observationEvidence.kind !== "validated")) return fail("UNTRUSTED_REFERENCE");
+    if (!observationEvidence) return fail("UNTRUSTED_REFERENCE");
     if (policy.taskId !== value.taskId || policy.attemptId !== value.attemptId || policy.operationId !== value.operationId || (policy.artifactId !== null && policy.artifactId !== value.artifactId)) return fail("SUBJECT_MISMATCH");
     if (observation.policyId !== policy.policyId || observation.policyVersion !== policy.policyVersion || observation.taskId !== value.taskId || observation.attemptId !== value.attemptId || observation.operationId !== value.operationId || observation.artifactId !== value.artifactId || observation.contentHash !== value.contentHash || observation.artifactBytes !== value.byteLength) return fail("SUBJECT_MISMATCH");
     const observationSubject = { taskId: observation.taskId, attemptId: observation.attemptId, operationId: observation.operationId, artifactId: observation.artifactId, captureId: observation.captureId, reviewId: null, contentHash: observation.contentHash, sourceProvenance: observationEvidence.subject.sourceProvenance } satisfies SnapshotSubject;
     if (!sameSubject(observationEvidence, observationSubject)) return fail("SUBJECT_MISMATCH");
+    if (observation.confidence === "observed" && !(observationEvidence.kind === "observed" && observationEvidence.observationMethod === observation.source)) return fail("UNTRUSTED_REFERENCE");
+    if (observation.confidence === "validated" && !(observationEvidence.kind === "validated" && observationEvidence.validationResult === "passed" && observationEvidence.validationSource === observation.source)) return fail("UNTRUSTED_REFERENCE");
     const exceeded = observation.artifactBytes > policy.perArtifactLimitBytes || observation.taskBytes > policy.taskLimitBytes;
     if (value.state === "complete" && exceeded) return fail("SUBJECT_MISMATCH");
     const quotaOutcome: "within-limit" | "partial-capture" | "quota-exceeded" = exceeded ? "quota-exceeded" : value.state === "complete" ? "within-limit" : "partial-capture";

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   CAPTURE_LIMITS,
+  TASK_STATES,
   digestReviewPackageManifest,
   evaluateArtifactTrust,
   evaluateCaptureTrust,
@@ -18,6 +19,8 @@ const otherHash = `sha256:${"b".repeat(64)}`;
 const automated = { mode: "automated", connectorType: "cli-headless", workerId: "codex", adapterId: "adapter-1", adapterVersion: "v1", adapterRunId: "run-1", executableId: "codex-cli", executableVersion: "v1", executableHash: null, runtime: "node", invocationMode: "headless", authenticationMode: "owner-managed", structuredOutput: true, isolation: "not-attested" } as const;
 const manual = { mode: "owner-attested", connectorType: "manual-relay", workerId: "reviewer", importMode: "reviewed-artifact-import", ownerAttestedAt: "2026-07-20T00:00:00Z", guarantees: { cryptographicIdentity: false, commandCapture: false, processSupervision: false, filesystemEnforcement: false } } as const;
 const sourceProvenance = { mode: "automated", connectorType: "cli-headless", workerId: "codex", adapterId: "adapter-1", adapterRunId: "run-1" } as const;
+const observerProvenance = { mode: "automated", connectorType: "browser-controlled", workerId: "bridge-worker", adapterId: "bridge-adapter", adapterRunId: "bridge-run" } as const;
+const validatorProvenance = { mode: "automated", connectorType: "http-api", workerId: "validator-worker", adapterId: "validator-adapter", adapterRunId: "validator-run" } as const;
 const subject = { taskId: "task-1", attemptId: "attempt-1", operationId: null, artifactId: "artifact-1", captureId: "capture-1", reviewId: null, contentHash: hash, sourceProvenance } as const;
 const captureBase = { captureVersion: "1.0", captureId: "capture-1", taskId: "task-1", attemptId: "attempt-1", operationId: null, artifactId: "artifact-1", contentHash: hash, approvalId: null, capturedAt: "2026-07-20T00:00:00Z" } as const;
 const observationRequest = { ...captureBase, kind: "artifact" as const, evidenceClass: "observation-request" as const, provenance: automated, requestedObserverId: "bridge-1", evidenceRef: "observation-1", observationMethod: "adapter" as const };
@@ -28,11 +31,11 @@ const core = { manifestVersion: "1.0", reviewId: "review-1", taskId: "task-1", a
 const context = {
   contextVersion: "1.0",
   evidence: [
-    { evidenceId: "observation-1", kind: "observed", subject, observerId: "bridge-1", observationMethod: "adapter" },
-    { evidenceId: "capture-validation-1", kind: "validated", subject: { ...subject, captureId: "validation-record" }, validatorId: "validator-1", validatedCaptureId: "capture-1", validationResult: "passed" },
+    { evidenceId: "observation-1", kind: "observed", subject, observerId: "bridge-1", observerProvenance, observationMethod: "adapter" },
+    { evidenceId: "capture-validation-1", kind: "validated", subject: { ...subject, captureId: "validation-record" }, validatorId: "validator-1", validatorProvenance, validationSource: "adapter", validatedCaptureId: "capture-1", validationResult: "passed" },
     { evidenceId: "producer-1", kind: "producer", subject, producerCaptureId: "capture-1" },
     { evidenceId: "inclusion-1", kind: "inclusion", subject: { ...subject, reviewId: "review-1" }, sourceEvidenceId: "producer-1" },
-    { evidenceId: "manifest-validation-1", kind: "validated", subject: { ...subject, captureId: "manifest-validation-1", reviewId: "review-1" }, validatorId: "validator-1", validatedCaptureId: "capture-1", validationResult: "passed" },
+    { evidenceId: "manifest-validation-1", kind: "validated", subject: { ...subject, captureId: "manifest-validation-1", reviewId: "review-1" }, validatorId: "validator-1", validatorProvenance, validationSource: "adapter", validatedCaptureId: "capture-1", validationResult: "passed" },
   ],
   quotaPolicies: [{ policyId: "policy-1", policyVersion: "v1", authority: "system", taskId: "task-1", attemptId: "attempt-1", operationId: null, artifactId: null, perArtifactLimitBytes: 100, taskLimitBytes: 1000, retentionClass: "task", expiresAt: "2026-07-21T00:00:00Z" }],
   quotaObservations: [{ observationId: "quota-observation-1", evidenceId: "observation-1", policyId: "policy-1", policyVersion: "v1", source: "adapter", confidence: "observed", taskId: "task-1", attemptId: "attempt-1", operationId: null, artifactId: "artifact-1", captureId: "capture-1", contentHash: hash, artifactBytes: 0, taskBytes: 0, taskArtifactCount: 1 }],
@@ -64,6 +67,15 @@ describe("M1E claim and authoritative-snapshot boundary", () => {
     expect(evaluateCaptureTrust({ ...observationRequest, requestedObserverId: "forged" }, context)).toMatchObject({ ok: false, code: "UNTRUSTED_REFERENCE" });
     expect(evaluateCaptureTrust({ ...validationRequest, requestedValidatorId: "forged" }, context)).toMatchObject({ ok: false, code: "UNTRUSTED_REFERENCE" });
     expect(evaluateCaptureTrust({ ...validationRequest, validationResult: "failed" }, context)).toMatchObject({ ok: false, code: "UNTRUSTED_REFERENCE" });
+    for (const validationResult of ["failed", "inconclusive"] as const) expect(evaluateCaptureTrust({ ...validationRequest, validationResult }, { ...context, evidence: [context.evidence[0], { ...context.evidence[1], validationResult }, ...context.evidence.slice(2)] })).toMatchObject({ ok: false, code: "UNTRUSTED_REFERENCE" });
+    const withEvidence = (evidence: unknown) => ({ ...context, evidence: [evidence, ...context.evidence.slice(1)] });
+    expect(parseAuthoritativeM1ESnapshotShape(withEvidence({ ...context.evidence[0], observerProvenance: { ...observerProvenance, workerId: "codex" } }))).toMatchObject({ ok: false });
+    expect(parseAuthoritativeM1ESnapshotShape(withEvidence({ ...context.evidence[0], observerProvenance: { ...observerProvenance, connectorType: "cli-headless" } }))).toMatchObject({ ok: false });
+    expect(parseAuthoritativeM1ESnapshotShape(withEvidence({ ...context.evidence[0], observerProvenance: { ...observerProvenance, adapterId: "adapter-1" } }))).toMatchObject({ ok: false });
+    expect(parseAuthoritativeM1ESnapshotShape(withEvidence({ ...context.evidence[0], observerProvenance: { ...observerProvenance, adapterRunId: "run-1" } }))).toMatchObject({ ok: false });
+    expect(parseAuthoritativeM1ESnapshotShape(withEvidence({ ...context.evidence[0], observerProvenance: undefined }))).toMatchObject({ ok: false });
+    expect(parseAuthoritativeM1ESnapshotShape({ ...context, evidence: [{ ...context.evidence[0], evidenceId: "conflicting-actor", observerProvenance: { ...observerProvenance, workerId: "other-observer" } }, ...context.evidence] })).toMatchObject({ ok: false });
+    expect(parseAuthoritativeM1ESnapshotShape({ ...context, evidence: [context.evidence[0], { ...context.evidence[1], validatorProvenance: { ...validatorProvenance, workerId: "codex" } }, ...context.evidence.slice(2)] })).toMatchObject({ ok: false });
   });
 
   it("parses an authoritative snapshot shape without treating parser success as authority and rejects conflicts", () => {
@@ -93,6 +105,16 @@ describe("M1E artifact, inclusion, and quota truth", () => {
     expect(parseArtifactMetadata({ ...artifact, quotaPolicy: { authority: "system" } })).toMatchObject({ ok: false });
     expect(evaluateArtifactTrust({ ...artifact, byteLength: 101 }, { ...context, quotaObservations: [{ ...context.quotaObservations[0], artifactBytes: 101 }] })).toMatchObject({ ok: false, code: "SUBJECT_MISMATCH" });
     expect(evaluateArtifactTrust({ ...artifact, byteLength: 101, state: "truncated", redaction: "required" }, { ...context, quotaObservations: [{ ...context.quotaObservations[0], artifactBytes: 101 }] })).toEqual({ ok: true, value: { quotaOutcome: "quota-exceeded" } });
+    const validatedObservation = { ...context.quotaObservations[0], evidenceId: "capture-validation-1", confidence: "validated" as const, captureId: "validation-record" };
+    expect(evaluateArtifactTrust(artifact, { ...context, quotaObservations: [validatedObservation] })).toEqual({ ok: true, value: { quotaOutcome: "within-limit" } });
+    for (const validationResult of ["failed", "inconclusive"] as const) {
+      expect(evaluateArtifactTrust(artifact, { ...context, evidence: [context.evidence[0], { ...context.evidence[1], validationResult }, ...context.evidence.slice(2)], quotaObservations: [validatedObservation] })).toMatchObject({ ok: false, code: "UNTRUSTED_REFERENCE" });
+    }
+    expect(evaluateArtifactTrust(artifact, { ...context, evidence: context.evidence.filter((item) => item.evidenceId !== "capture-validation-1"), quotaObservations: [validatedObservation] })).toMatchObject({ ok: false, code: "UNTRUSTED_REFERENCE" });
+    expect(evaluateArtifactTrust(artifact, { ...context, quotaObservations: [{ ...validatedObservation, captureId: "capture-1" }] })).toMatchObject({ ok: false, code: "SUBJECT_MISMATCH" });
+    expect(evaluateArtifactTrust(artifact, { ...context, quotaObservations: [{ ...validatedObservation, confidence: "observed" }] })).toMatchObject({ ok: false, code: "UNTRUSTED_REFERENCE" });
+    expect(evaluateArtifactTrust(artifact, { ...context, quotaObservations: [{ ...context.quotaObservations[0], source: "runtime" }] })).toMatchObject({ ok: false, code: "UNTRUSTED_REFERENCE" });
+    expect(evaluateArtifactTrust(artifact, { ...context, quotaObservations: [{ ...validatedObservation, source: "runtime" }] })).toMatchObject({ ok: false, code: "UNTRUSTED_REFERENCE" });
   });
 
   it("requires review-scoped inclusion that is distinct from producer evidence", () => {
@@ -134,6 +156,12 @@ describe("M1E safe projection, canonical output, and totality", () => {
     const serialized = serializeBridgeLogFrontMatter(frontMatter);
     expect(serialized).toEqual({ ok: true, value: "---\n{\"approvalIds\":[],\"artifactIds\":[],\"attemptId\":\"attempt-1\",\"createdAt\":\"2026-07-20T00:00:00Z\",\"nonAuthoritative\":true,\"projectId\":\"pilot\",\"projectionVersion\":\"1.0\",\"provenanceMode\":\"automated\",\"redaction\":\"redacted\",\"redactionCount\":1,\"reviewId\":null,\"state\":\"RESULT_CAPTURED\",\"taskId\":\"task-1\",\"validation\":\"validated\",\"warnings\":[\"line\\\\nbody\"]}\n---\n" });
     expect(serializeBridgeLogFrontMatter({ ...frontMatter, warnings: ["---\nAuthorization: Bearer abcdefghijklmnop"] })).toEqual({ ok: false, code: "MALFORMED_FRONT_MATTER" });
+    for (const state of TASK_STATES) expect(serializeBridgeLogFrontMatter({ ...frontMatter, state })).toMatchObject({ ok: true });
+    for (const state of ["result_captured", "RESULT-CAPTURED", "ghp_abcdefghijklmnopqrstuvwxyz1234567890"]) {
+      const rejected = serializeBridgeLogFrontMatter({ ...frontMatter, state });
+      expect(rejected).toEqual({ ok: false, code: "MALFORMED_FRONT_MATTER" });
+      expect(JSON.stringify(rejected)).not.toContain(state);
+    }
   });
 
   it("hashes every trust-relevant manifest field canonically while preserving array order", () => {
