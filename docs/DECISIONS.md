@@ -1,10 +1,10 @@
 # Decisions
 
-> **STATUS: DECISIONS D-001 … D-032 ACCEPTED BY OWNER — M1A AND M1B MERGED INTO `main`; M1C APPROVAL-SECURITY CONTRACTS ACTIVE UNDER EXPLICIT OWNER GO ON `task/m1c-approval-security-contracts`, PENDING BANTAY/OWNER REVIEW**
+> **STATUS: DECISIONS D-001 … D-032 ACCEPTED BY OWNER — M1A, M1B, AND M1C APPROVAL-SECURITY CONTRACTS ACCEPTED AND MERGED INTO `main`; M1D AND LATER MILESTONES NOT STARTED OR AUTHORIZED**
 
 This file is the decision log. An entry marked **ACCEPTED BY OWNER** records a decision Kenneth / CHUBZ has approved. Acceptance of a design decision does **not** by itself authorize implementation, deployment, infrastructure configuration, or production access; each implementation phase carries its own explicit owner GO.
 
-**Current milestone authorization (2026-07-20):** the owner issued the bounded M1C GO to Codex on `task/m1c-approval-security-contracts`. This supersedes only the earlier M1C-status wording in D-023; M1D, M1E, M1F, M2, runtime work, merge, push, deployment, and production operations remain unauthorized pending their own gates.
+**Current milestone status (2026-07-20):** M1C received explicit owner/Bantay acceptance after an independent security re-review PASS; accepted implementation commits are `769677dd7ee876a4ecbda08bb3674b6fa8a9a82a` and `cdffc0170facedb4c9791619a0adabc86e7f6f50`, with 329 tests and typecheck passing during the accepted review. Runtime key storage, persistent atomic grant consumption, WebAuthn ceremony, and Bridge execution remain deferred; M1D, M1E, M1F, M2, and all later milestones remain unauthorized pending separate explicit GO.
 
 Decisions D-006 … D-018 correspond to proposals P-006 … P-018 in [FINAL_ARCHITECTURE_DESIGN.md](FINAL_ARCHITECTURE_DESIGN.md) §22, as revised following Bantay's required design revisions (2026-07-10). Where the design documents and this log ever disagree, this log governs the decision and the design documents govern the detail.
 
@@ -184,7 +184,7 @@ Decisions D-006 … D-018 correspond to proposals P-006 … P-018 in [FINAL_ARCH
   6. Protocol contracts must reject unknown fields, unknown message kinds, and unsupported versions by default.
   7. Bridge messages must use typed high-level operations, never raw shell command strings.
   8. M1B does not implement WebSocket servers, persistence, queues, authentication, grants, process execution, or network I/O.
-  9. M1C and later phases require separate owner authorization. M1C is now active under the later bounded owner GO recorded above; later phases remain unauthorized.
+  9. M1C and later phases require separate owner authorization. M1C is complete and accepted under the bounded owner/Bantay decision recorded above; later phases remain unauthorized.
 
 ## D-024 — Adapter integration strategy and readiness
 
