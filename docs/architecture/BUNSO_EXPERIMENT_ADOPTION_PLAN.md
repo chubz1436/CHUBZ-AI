@@ -26,8 +26,20 @@ The canonical repository and experiment have different root commits (`5f60f8472a
 | `1b91562` | `1b915627ae716675ec668e11f1e167bf5a4bc57c` | Found; contained by local and remote-tracking experiment branch | Repository-capability routing and UI/API recommendation filtering |
 | `3afe632` | `3afe632547c9a41993f009bc6064d28a1131ec55` | Found; contained by local and remote-tracking experiment branch | Filter/hook, detached-child cancellation, and credential/routing test coverage |
 | `28c7d47` | `28c7d472d6496c20ee60b1a14bad968ebd3c2572` | Found; contained by local and remote-tracking experiment branch | Repository-backed architecture narrative, SQLite WAL, token boundary, and quarantine documentation |
+| `a9c82c9` | `a9c82c92a4610d2696fdc43a53d6ba05223c638a` | **Local-only**; parent and local branch only; not proven pushed or merged | Termination-proof aggregation, independent per-tree retry identity, parallel reverification, and configurable termination deadline |
 
 `git show --stat` and changed-path inspection were performed for every listed commit. The experiment was neither merged, cherry-picked, reset, cleaned, pushed, nor otherwise modified by this batch.
+
+## Local-only HEAD audit
+
+The exact local-only range was `origin/improve/repository-backed-codex-vertical-slice..improve/repository-backed-codex-vertical-slice` and contains only `a9c82c92a4610d2696fdc43a53d6ba05223c638a`.
+
+- **Parent:** `7ae1ba48d2439b1132cc36b2ba8b379aee72e501`.
+- **Subject:** `Termination proof merging: AND across every tracked tree, independent per-tree retry`.
+- **Body claims:** settlement truth is the logical AND of each tracked source's own `proven` flag; unknown/thrown results are explicit unproven sources; each worker/validator tree keeps a stable `rootPid`, label, and captured list; retries reverify each prior source independently; validation proofs are cleared after each run; reverification runs in parallel; successful retry state supersedes the current failed result while failure events remain in the audit trail; `terminationDeadlineMs` defaults to 15 seconds and is configurable by `TERMINATION_DEADLINE_MS`.
+- **Changed paths:** `server/src/attempts/runners.ts`, `server/src/attempts/service.ts`, `server/src/config.ts`, `server/test/cancellation-truth.test.ts`, and `shared/types.ts`.
+- **Scope conclusion:** this is a material runtime-correctness correction to termination evidence and retry handling, not a new product workflow or architecture. It is local-only and is not proven pushed or merged.
+- **Historical test/build claims:** 124 tests total, 123 passed, one POSIX-only test skipped on Windows; typecheck and build clean. These results were not rerun and are historical experiment evidence only.
 
 ## Proven historical workflow
 
@@ -57,6 +69,9 @@ Historical experiment results recorded in commit messages are **not rerun result
 | Independent repository validation | Selectively port after contract review | M3 managed-clone evidence plus M7 review-package validation; never modify the owner working copy. |
 | Owner acceptance | Already covered by canonical architecture | D-014 approval model; M1C contracts and M4/M9 implementation gates. |
 | Cleanup and recovery | Reimplement against current contracts | M3 workspace lifecycle and M8 recovery/cleanup hardening. |
+| Termination proof merge must AND every source's own `proven` flag, including unknown/empty-live-PID results | Reimplement against current contracts | M1F termination/reconciliation evidence, then M3 supervisor and M8 recovery hardening; never settle or release leases from a flattened PID union. |
+| Stable per-tree `rootPid` identity, independent retry reverification, cleared proof cache, and parallel retry checks | Reimplement against current contracts | M1F operation/evidence contract, then M3/M8; preserve separate worker and validator tree identity. |
+| Configurable per-tree termination deadline (`terminationDeadlineMs`, historical default 15s) | Selectively port after contract review | M1F adapter/run configuration contract, then M3 supervisor; do not assume the historical default is canonical. |
 
 ## Known limitations to retain during review
 
@@ -65,8 +80,9 @@ Historical experiment results recorded in commit messages are **not rerun result
 - Legacy adapters were quarantined; their existence is not evidence that they are supported in the canonical system.
 - The validator ran with owner OS privileges; this does not satisfy the restricted-worker prerequisite for remote execution.
 - Windows `taskkill /T` cannot prove termination of every completely detached descendant; cancellation remains an evidence and recovery concern.
+- The local-only correction adds a POSIX-only empty-live-PID regression case; it was skipped on Windows and is not canonical validation.
 - The proven repository path was Codex-only at that stage; other workers remain capability-probed/manual as directed by D-024.
-- Historical tests are not proof that the current canonical branch passes them.
+- Historical tests/build claims (`70/70`, `71/71`, `113/113`, and local-only `123 passed + 1 skipped`, typecheck/build clean) are not proof that the current canonical branch passes them.
 
 ## Adoption boundary
 
