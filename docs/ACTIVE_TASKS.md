@@ -9,7 +9,7 @@
 3. **Completed — conditional pass** — Antigravity Phase 0B operational feasibility validation ([PHASE0B_OPERATIONAL_VALIDATION_REPORT.md](PHASE0B_OPERATIONAL_VALIDATION_REPORT.md)).
 4. **Completed** — M1A Core Contracts: implemented, Bantay/Codex reviewed (D-021, D-022 hardening applied), owner-approved, and fast-forward merged into `main`.
 5. **Completed** — M1B Protocol Contracts: merged into `main` through `2dc6a12`.
-6. **Current** — Codex documentation-only BUNSO architecture preservation and owner-decision closure on `task/bunso-architecture-alignment`; BUNSO's reviewed architecture is governing design input alongside accepted decisions.
+6. **Current** — Codex documentation-only BUNSO architecture preservation, owner-decision closure, and separate-experiment adoption planning on `task/bunso-architecture-alignment`; BUNSO's reviewed architecture is governing design input alongside accepted decisions.
 7. **Pending and not authorized** — M1C Approval-Security Contracts, then M1D … M1F one at a time, each after owner approval of the previous review.
 
 Earlier project bootstrap and worker onboarding (Codex, BUNSO, Antigravity) are complete and precede item 1.

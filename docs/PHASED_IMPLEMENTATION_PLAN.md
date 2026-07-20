@@ -57,6 +57,8 @@ Performed by **Antigravity** (read-only and trivially reversible checks), comple
 **Rollback:** none needed — documents only.
 **STOP POINT (status aligned 2026-07-20):** M1A and M1B are completed and merged into `main`. **M1C remains not started and unauthorized** with its own GO required. The active batch is documentation alignment only; owner/Bantay review follows it before any implementation authorization.
 
+**Historical implementation evidence:** A separate BUNSO repository-backed Codex experiment is recorded in [BUNSO_EXPERIMENT_ADOPTION_PLAN.md](architecture/BUNSO_EXPERIMENT_ADOPTION_PLAN.md). Its compatible behavior may be selectively reimplemented only through the existing M1C–M1F and runtime milestone gates; it does not authorize a merge, cherry-pick, replacement, or earlier milestone start.
+
 ---
 
 ## Phase 1 — Local-Only Vertical Slice (the MVP)

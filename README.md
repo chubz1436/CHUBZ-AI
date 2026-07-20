@@ -36,4 +36,4 @@ All other proposed subdomains are deferred. No DNS, hosting, tunnel, authenticat
 
 ## Start here
 
-Read [docs/PROJECT_OVERVIEW.md](docs/PROJECT_OVERVIEW.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), and [docs/SAFETY_AND_APPROVALS.md](docs/SAFETY_AND_APPROVALS.md). The recommended next activity is read-only onboarding of every planned worker.
+Read [docs/PROJECT_OVERVIEW.md](docs/PROJECT_OVERVIEW.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/SAFETY_AND_APPROVALS.md](docs/SAFETY_AND_APPROVALS.md), and the [BUNSO Experiment Adoption Plan](docs/architecture/BUNSO_EXPERIMENT_ADOPTION_PLAN.md). The recommended next activity is read-only onboarding of every planned worker.

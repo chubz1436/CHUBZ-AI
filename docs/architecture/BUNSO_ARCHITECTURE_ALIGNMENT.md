@@ -7,7 +7,8 @@
 - `main` at `2dc6a12948c4fe695a0c2f07c47917cdd7167bdc`, which descends from the recorded baseline of the same commit.
 - Architecture-revision commit `75931a9` and the succeeding M1A/M1B decision, contract, and status history through `2dc6a12`.
 - The accepted design, security model, implementation plan, decision register, worker-role record, Phase 0B report, and M1A/M1B history.
-- BUNSO's preserved, untracked design evidence: `CHUBZ_AI_COMMAND_CENTER_OVERALL_ARCHITECTURE_DRAFT.md` and `OVERALL_ARCHITECTURE_GAP_AND_DECISION_REVIEW.md` (both dated 2026-07-12). They are not modified by this batch; this record is their official disposition.
+- BUNSO's preserved, tracked design evidence: `CHUBZ_AI_COMMAND_CENTER_OVERALL_ARCHITECTURE_DRAFT.md` and `OVERALL_ARCHITECTURE_GAP_AND_DECISION_REVIEW.md` (both dated 2026-07-12). This record is their official disposition.
+- BUNSO's separate repository-backed experimental implementation, preserved and assessed in [BUNSO_EXPERIMENT_ADOPTION_PLAN.md](BUNSO_EXPERIMENT_ADOPTION_PLAN.md). It is implementation evidence, not an architecture replacement or a code-transfer authorization.
 
 ## Disposition matrix
 
@@ -34,6 +35,7 @@ Each material proposal has one disposition. Existing decisions remain controllin
 | M10 routing/quota/fallback and M11 dashboards/notifications/packaging | Deferred to named roadmap milestones | D-030; M10/M11 are beyond the first implementation phase and notifications remain M11 / Phase 4 |
 | Codex reversion to current primary implementation worker | Accepted and active | D-031 |
 | Hermes-style UX/workflow references | Superseded | D-032 preserves the custom Control Plane / Local Bridge architecture as governing; Hermes does not replace it |
+| Separate repository-backed Codex experiment | Selectively port after contract review | [BUNSO_EXPERIMENT_ADOPTION_PLAN.md](BUNSO_EXPERIMENT_ADOPTION_PLAN.md); no wholesale transfer or bypass of M1C–M1F |
 | Operations Gateway for business/production control | Superseded | D-015 refuses these capabilities in the MVP. A future separately designed, separately authorized gateway may replace that exclusion only after an owner decision. |
 | Historical claims that M1B was current or unmerged | Superseded | Current `main` contains the completed M1B work through `2dc6a12`; this status is reflected in the active plan and task record. |
 
