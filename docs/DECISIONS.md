@@ -1,6 +1,6 @@
 # Decisions
 
-> **STATUS: DECISIONS D-001 … D-027 ACCEPTED BY OWNER — M1A AND M1B MERGED INTO `main`; M1C NOT STARTED AND UNAUTHORIZED**
+> **STATUS: DECISIONS D-001 … D-032 ACCEPTED BY OWNER — M1A AND M1B MERGED INTO `main`; M1C NOT STARTED AND UNAUTHORIZED**
 
 This file is the decision log. An entry marked **ACCEPTED BY OWNER** records a decision Kenneth / CHUBZ has approved. Acceptance of a design decision does **not** by itself authorize implementation, deployment, infrastructure configuration, or production access; each implementation phase carries its own explicit owner GO.
 
@@ -215,3 +215,36 @@ Decisions D-006 … D-018 correspond to proposals P-006 … P-018 in [FINAL_ARCH
 - **Decision date:** 2026-07-20
 - **Decision:** Chubz is final approver; Bantay reviews strategy, safety, scope, and prompts; Codex is the current primary implementation worker; BUNSO remains an architecture source; and Antigravity remains secondary until capability-proven. Workers cannot override owner or repository policy, infer production authorization, or treat a draft as a governing contract.
 - **Precedence:** Newer explicit owner decisions override older conflicting planning notes; accepted decisions override informal drafts; merged approved contracts override unapproved proposals. Architecture-governing implementation changes update their applicable documentation and decision record in the same implementation batch, without requiring unrelated documentation churn.
+
+## D-028 — Multi-surface Command Center UI
+
+- **Status:** ACCEPTED BY OWNER
+- **Decision date:** 2026-07-20
+- **Decision:** Chat remains the primary command and approval surface. Kanban, task queue, task detail, worker status, quota status, recovery center, logs, and dashboard views are accepted inspection and workflow surfaces.
+- **Invariant:** Any action initiated outside chat emits the same typed command and passes through the same approval and policy engine. No dashboard or other surface may introduce a separate or weaker command path.
+
+## D-029 — Recommendation-first worker routing
+
+- **Status:** ACCEPTED BY OWNER
+- **Decision date:** 2026-07-20
+- **Decision:** Routing ranks workers by task type, assigned role, capability, availability, quota confidence, load, and the lowest-cost capable worker. MVP dispatch remains owner-confirmed.
+- **Boundary:** Future auto-dispatch requires an explicit, revocable, per-category owner policy. It is never the default for production, destructive, infrastructure, credential, database, MikroTik, deployment, restart, or other operate-class work.
+
+## D-030 — Roadmap sequencing for coordination, routing, and surfaces
+
+- **Status:** ACCEPTED BY OWNER
+- **Decision date:** 2026-07-20
+- **Decision:** M1F follows M1E and completes before M2. M10 and M11 are accepted roadmap milestones beyond the first implementation phase: M10 matures routing, quota, and fallback; M11 adds expanded dashboards, notifications, and later packaging.
+- **Boundary:** Notifications remain deferred to M11 / Phase 4. This decision does not authorize M1F, M10, M11, or any other implementation.
+
+## D-031 — Current primary implementation worker
+
+- **Status:** ACCEPTED BY OWNER
+- **Decision date:** 2026-07-20
+- **Decision:** Codex is the current primary implementation worker. BUNSO remains the lead architecture designer and governing architecture source; any implementation or review assignment remains explicit and bounded.
+
+## D-032 — Governing CHUBZ architecture and reference systems
+
+- **Status:** ACCEPTED BY OWNER
+- **Decision date:** 2026-07-20
+- **Decision:** The original custom CHUBZ AI Command Center architecture remains governing: the Control Plane and outbound-only Local Bridge are the core architecture. Hermes-style systems are UX and workflow references only; they do not replace the governing architecture.

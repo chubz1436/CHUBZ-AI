@@ -72,6 +72,7 @@ flowchart LR
 The chain Browser → Control Plane → Bridge → process execution is the reason this system needs a threat model. Controls in sequence:
 
 1. Browser input is data, never code: strict schema validation (Zod) on every message; commands are an enum, not free-form shell.
+   Every chat, Kanban, queue, dashboard, recovery, and log action reaches this same typed-command boundary; no alternate UI command path exists.
 2. Control Plane authorizes: session validity, project scope, task state legality, gate policy — before anything reaches the Bridge.
 3. The Bridge trusts no instruction on connection identity alone: privileged operations (dispatch, integrate, delete workspace, kill) each require a matching grant. **Honest limitation:** in Phase 1 the Control Plane itself holds the HMAC signing key, so a fully compromised Control Plane could mint valid-looking grants. Phase 1 grants defend against replay, accidental protocol misuse, stale messages, scope mismatch, and duplicated delivery — **not** against full Control Plane compromise. That is acceptable only while the whole system is loopback-only; before any remote exposure, consequential approvals must carry a Bridge-verifiable owner-presence proof the Control Plane cannot forge (§8.2).
 4. Worker invocations are parameterized: adapters build argument arrays (`execa` without shell), never string-concatenated shell commands; owner text is passed as prompt content, not as command-line-interpreted material.

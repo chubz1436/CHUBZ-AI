@@ -152,6 +152,8 @@ Performed by **Antigravity** (read-only and trivially reversible checks), comple
 
 **Objective:** raise concurrency safely and deepen automation without weakening gates.
 
+**Accepted later milestones (D-030):** **M10 — Routing, Quota, and Fallback Maturation** adds recommendation evidence, quota-confidence behavior, circuit-breaker/fallback controls, and any separately approved category policy for auto-dispatch. **M11 — Expanded Surfaces, Notifications, and Packaging** adds the expanded dashboards, outbound notifications, and later packaging. Both are beyond the first implementation phase. Notifications remain deferred to M11 / Phase 4.
+
 **Included scope:** concurrency raise (e.g., 2/project, 4 global) with the file-overlap Conflict Detector actively blocking colliding finalizations; per-file ownership hints; assumption-trailer capture surfaced in review packages and `/compare`; heuristic risk lint on diffs (new exec/network calls, touched sensitive paths) as **flags only**; notification hook (e.g., push/email "approval waiting") as an outbound-only integration; **further hardening beyond the Phase 2 baseline** (per-worker tuning of the restricted account, CPU/memory quota tuning via Job Objects); NSSM/service-based auto-start; backup/restore automation for the data directory using the SQLite backup mechanism (never file-copying the live WAL database), plus artifact-quota and owner-controlled retention enforcement.
 
 **Excluded scope:** semantic-conflict *resolution* (permanent non-goal); business-system control.

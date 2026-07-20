@@ -301,6 +301,10 @@ Adapters are SDK/CLI-first. GUI automation is not a normal connector path and br
 
 Before dispatch is enabled, startup probes record version, capabilities, authentication state, sandbox support, noninteractive operation, cancellation, resume, structured output, and quota/rate-limit confidence when available. The registry records explicit readiness (`unprobed`, `probing`, `ready`, `degraded`, `manual-only`, `blocked`, or `frozen`) rather than a Boolean. A failed or regressed adapter falls back to manual relay and retains its evidence.
 
+### 8.5 Recommendation-first worker routing `ACCEPTED (D-029)`
+
+The routing engine ranks eligible workers by task type, assigned role, capability, availability, quota confidence, load, and the lowest-cost capable option. In the MVP it produces a recommendation with reasons; the owner confirms the dispatch. A future auto-dispatch policy must be explicit, revocable, and scoped to a named task category. It is never the default for production, destructive, infrastructure, credential, database, MikroTik, deployment, restart, or other operate-class work.
+
 ## 9. Command Model
 
 Commands are parsed into typed Command objects; free text without a slash goes to the currently selected worker as a task request (after a confirmation chip showing which worker/project will receive it).
@@ -575,7 +579,7 @@ Explicitly avoided: Kubernetes/Docker orchestration, message brokers, microservi
 
 ## 18. UI / UX Structure
 
-Layout: **one chat column + one collapsible side panel + a thin top bar.** No dashboard grid.
+Layout: **a primary command chat plus task and observability surfaces.** Chat remains the primary command and approval surface; Kanban, task queue/detail, worker and quota status, recovery center, logs, and dashboard views expose the same underlying state without creating a second command path.
 
 **Top bar:** project selector (dropdown; remembers last), worker selector with status chips, **Emergency Stop button (always visible, red, requires one confirm tap)**, connection indicator (local / remote via tunnel / bridge offline).
 
@@ -591,8 +595,13 @@ Layout: **one chat column + one collapsible side panel + a thin top bar.** No da
 | History | Task history list with filters; links to Bridge Log entries and review packages (Download Bantay Review Package lives here and on each approval card) |
 | Workers | Health view: connector tier (automated vs manual — honestly labeled), reachability, last error, queue |
 | Settings | Project paths, context sources, vault path, devices & sessions (revocation), bridge enrollment |
+| Kanban & Queue | Task queue, board, ownership, and explicit handoff status |
+| Dashboard | Worker, quota, artifact, recovery, and system-status summaries |
+| Recovery & Logs | Journal reconciliation, failure timeline, and redacted operational logs |
 
 Rule of placement: **anything the owner must act on appears in the chat; anything the owner may inspect lives in the panel.** The chat never fills with raw logs, full diffs, or file dumps — those are one tap away in the panel. This is the structural guarantee against Mission-Control drift.
+
+**Action invariant (D-028):** an action initiated from any non-chat surface emits the same typed command and passes through the same approval and policy engine as chat. Dashboards and boards never receive a weaker or separate command path.
 
 Phone (PWA): single column; panel becomes a bottom sheet; approval cards and emergency stop keep first-class prominence.
 
@@ -653,4 +662,4 @@ No DNS, tunnel, certificate, or hosting configuration is performed or implied by
 
 ---
 
-*Companion documents: [SECURITY_AND_THREAT_MODEL.md](SECURITY_AND_THREAT_MODEL.md), [PHASED_IMPLEMENTATION_PLAN.md](PHASED_IMPLEMENTATION_PLAN.md).*
+*Companion documents: [SECURITY_AND_THREAT_MODEL.md](SECURITY_AND_THREAT_MODEL.md), [PHASED_IMPLEMENTATION_PLAN.md](PHASED_IMPLEMENTATION_PLAN.md). Reviewed historical BUNSO inputs: [Overall Architecture Draft](architecture/CHUBZ_AI_COMMAND_CENTER_OVERALL_ARCHITECTURE_DRAFT.md) and [Gap and Decision Review](architecture/OVERALL_ARCHITECTURE_GAP_AND_DECISION_REVIEW.md); their disposition record is [BUNSO Architecture Alignment](architecture/BUNSO_ARCHITECTURE_ALIGNMENT.md).*
