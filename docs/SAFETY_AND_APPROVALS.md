@@ -1,5 +1,7 @@
 # Safety and Approvals
 
+> **M2 STATUS (2026-07-21):** M2 is active, local-only, and unaccepted on `task/m2-control-plane-foundation` under an explicit owner GO. It does not authorize a Bridge, adapters, worker execution, orchestration, UI, remote access, deployment, or any M3+ work. Independent review and separate owner acceptance are required.
+
 > **STATUS: POLICY REFERENCE — M1A-M1F CONTRACTS ACCEPTED; M1F PASSED COMPREHENSIVE INDEPENDENT REVIEW; RUNTIME NOT YET IMPLEMENTED. M2 AND LATER REMAIN UNAUTHORIZED PENDING A SEPARATE EXPLICIT OWNER GO.**
 
 The command center is planned around least privilege, visible intent, task isolation, and owner-controlled escalation.

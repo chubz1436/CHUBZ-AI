@@ -1,5 +1,7 @@
 # Active Tasks
 
+> **M2 STATUS (2026-07-21):** M2 Control Plane Foundation has explicit owner GO and is active, unaccepted, on `task/m2-control-plane-foundation`; Codex is the implementation worker. Its bounded scope is local-only Fastify, strict loopback configuration, SQLite WAL/migrations, local administrator sessions, CSRF/Origin protections, authenticated M1B WebSocket parsing with cursor/idempotency persistence, and health/readiness. It excludes Bridge, adapters, worker execution, orchestration, UI, remote access, deployment, and M3+. Independent review and separate owner acceptance remain required. M1F's deferred LOW `readOnlyPaths` overlap note remains carried forward for later write-scope enforcement.
+
 > **STATUS: M1A-M1F CONTRACTS ACCEPTED. M1F ADAPTER & COORDINATION CONTRACTS PASSED COMPREHENSIVE INDEPENDENT REVIEW; M2 AND LATER REMAIN NOT STARTED OR UNAUTHORIZED.**
 
 ## Project lifecycle status

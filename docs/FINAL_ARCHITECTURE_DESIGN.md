@@ -1,5 +1,7 @@
 # Final Architecture Design
 
+> **M2 STATUS (2026-07-21):** M2 Control Plane Foundation is active, local-only, and unaccepted on `task/m2-control-plane-foundation`. M1A-M1F remain accepted; M3 and later remain unauthorized. Its implementation is bounded to the Control Plane foundation and requires independent review and separate owner acceptance.
+
 > **STATUS: ACCEPTED ARCHITECTURE (decisions D-006 … D-032) — M1A-M1E CONTRACTS ACCEPTED; M1F ADAPTER & COORDINATION CONTRACTS ACTIVE AND UNACCEPTED ON `task/m1f-adapter-coordination-contracts`; RUNTIME NOT YET IMPLEMENTED**
 >
 > Author: Claude Code / BUNSO (Fable 5), lead and final designer per accepted decision D-005.

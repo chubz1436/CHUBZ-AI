@@ -1,0 +1,31 @@
+{
+  "name": "@chubz/control-plane",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "start": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "@chubz/shared": "workspace:*",
+    "@fastify/cookie": "^11.0.2",
+    "@fastify/websocket": "^11.2.0",
+    "argon2": "^0.44.0",
+    "better-sqlite3": "^12.5.0",
+    "fastify": "^5.6.0",
+    "pino": "^9.9.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^22.15.3",
+    "@types/ws": "^8.18.1",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4",
+    "ws": "^8.21.1"
+  }
+}

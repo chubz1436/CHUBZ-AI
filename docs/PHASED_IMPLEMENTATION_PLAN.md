@@ -1,5 +1,7 @@
 # Phased Implementation Plan
 
+> **M2 STATUS (2026-07-21):** M2 Control Plane Foundation has explicit owner GO and is active but unaccepted on `task/m2-control-plane-foundation`, with Codex as implementation worker. Its scope is restricted to local-only configuration, Fastify, SQLite WAL/migrations, local administrator authentication/sessions, browser protections, M1B WebSocket parsing/cursors/idempotency persistence, and health/readiness. It excludes Bridge, adapters, worker execution, orchestration, UI, remote access, deployment, and M3+. Independent review and separate owner acceptance are required.
+
 > **STATUS: ACCEPTED PLAN — M1A-M1F CONTRACTS COMPLETE AND ACCEPTED; M1F PASSED COMPREHENSIVE INDEPENDENT REVIEW; RUNTIME IMPLEMENTATION NOT STARTED**
 >
 > Author: Claude Code / BUNSO (Fable 5), per accepted decision D-005; implementation-worker assignment amended by D-019.

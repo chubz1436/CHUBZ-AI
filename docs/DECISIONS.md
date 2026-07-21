@@ -1,5 +1,7 @@
 # Decisions
 
+**M2 GO (2026-07-21):** The owner authorized one bounded local-only Control Plane foundation batch on `task/m2-control-plane-foundation`, implemented by Codex. M2 covers strict loopback configuration, Fastify lifecycle, SQLite WAL/migrations, local-admin Argon2 sessions, CSRF/Origin/request protections, authenticated M1B WebSocket parsing with persisted cursor/idempotency handling, and health/readiness. It excludes Bridge, adapters, worker execution, orchestration, UI, remote access, deployment, and M3+. Independent review and separate owner acceptance remain required.
+
 > **STATUS: DECISIONS D-001 … D-032 ACCEPTED BY OWNER — M1A-M1F ACCEPTED; M1F ADAPTER & COORDINATION CONTRACTS PASSED COMPREHENSIVE INDEPENDENT REVIEW; M2 AND LATER REMAIN NOT STARTED OR UNAUTHORIZED PENDING A SEPARATE EXPLICIT OWNER GO**
 
 This file is the decision log. An entry marked **ACCEPTED BY OWNER** records a decision Kenneth / CHUBZ has approved. Acceptance of a design decision does **not** by itself authorize implementation, deployment, infrastructure configuration, or production access; each implementation phase carries its own explicit owner GO.
