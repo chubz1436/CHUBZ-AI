@@ -5,7 +5,7 @@ import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest }
 import { parseClientToControlPlaneMessage, type ControlPlaneToClientMessage, canonicalizeClientMutationForDigest, classifyDelivery, scopeKey } from "@chubz/shared";
 import { detectRedactions, redactText } from "@chubz/shared";
 import type { AuthService, Principal } from "./auth.js";
-import { AuthService as AuthServiceClass } from "./auth.js";
+import { AuthService as AuthServiceClass, BootstrapConflictError } from "./auth.js";
 import type { ControlPlaneConfig } from "./config.js";
 import { ControlPlaneDatabase } from "./database.js";
 
@@ -21,16 +21,26 @@ const safeDetail = (value: unknown): string | undefined => {
   const result = redactText(value, findings.value);
   return result.ok ? result.value.text.slice(0, 512) : "[redacted]";
 };
-const errorMessage = (code: string): string => ({ INVALID_REQUEST: "The request is invalid.", UNAUTHORIZED: "Authentication is required.", FORBIDDEN: "The request is not permitted.", RATE_LIMITED: "Too many attempts. Try again later.", IDEMPOTENCY_CONFLICT: "The request conflicts with a prior delivery.", UNAVAILABLE: "The service is not ready." }[code] ?? "The request could not be processed.");
+const errorMessage = (code: string): string => ({ INVALID_REQUEST: "The request is invalid.", UNAUTHORIZED: "Authentication is required.", FORBIDDEN: "The request is not permitted.", CONFLICT: "The requested setup is no longer available.", RATE_LIMITED: "Too many attempts. Try again later.", IDEMPOTENCY_CONFLICT: "The request conflicts with a prior delivery.", UNAVAILABLE: "The service is not ready." }[code] ?? "The request could not be processed.");
 const publicError = (reply: FastifyReply, status: number, code: string, requestId: string) => reply.code(status).send({ error: { code, message: errorMessage(code), requestId } });
 const isOriginAllowed = (request: FastifyRequest, config: ControlPlaneConfig): boolean => request.headers.origin === config.allowedOrigin;
 const reqId = (request: FastifyRequest): string => typeof request.id === "string" ? request.id.slice(0, 128) : messageId();
-type LoginBucket = { count: number; resetAt: number };
+type LoginBucket = { count: number; expiresAt: number; generation: number };
+type LoginBucketExpiry = Readonly<{ key: string; expiresAt: number; generation: number }>;
 
 export function createControlPlane(config: ControlPlaneConfig): ControlPlane {
   const database = new ControlPlaneDatabase(config);
   const auth = new AuthServiceClass(database, config);
   const loginBuckets = new Map<string, LoginBucket>();
+  const loginBucketExpiries: LoginBucketExpiry[] = [];
+  let loginBucketGeneration = 0;
+  const pruneLoginBuckets = (at: number): void => {
+    while (loginBucketExpiries.length > 0 && loginBucketExpiries[0]!.expiresAt <= at) {
+      const expired = loginBucketExpiries.shift()!;
+      const current = loginBuckets.get(expired.key);
+      if (current?.generation === expired.generation && current.expiresAt <= at) loginBuckets.delete(expired.key);
+    }
+  };
   const app = Fastify({ logger: { level: config.logLevel }, bodyLimit: config.requestBodyLimit, genReqId: () => messageId() });
   void app.register(cookie);
   void app.register(websocket, { options: { maxPayload: config.websocketMessageLimit } });
@@ -55,13 +65,20 @@ export function createControlPlane(config: ControlPlaneConfig): ControlPlane {
   });
   app.post<{ Body: { username?: unknown; password?: unknown } }>("/v1/auth/bootstrap", async (request, reply) => {
     if (!isOriginAllowed(request, config)) return publicError(reply, 403, "FORBIDDEN", reqId(request));
-    try { await auth.bootstrap(request.body?.username as string, request.body?.password as string, reqId(request)); return reply.code(201).send({ status: "created" }); } catch { return publicError(reply, 401, "UNAUTHORIZED", reqId(request)); }
+    try { await auth.bootstrap(request.body?.username as string, request.body?.password as string, reqId(request)); return reply.code(201).send({ status: "created" }); } catch (error) { return error instanceof BootstrapConflictError ? publicError(reply, 409, "CONFLICT", reqId(request)) : publicError(reply, 401, "UNAUTHORIZED", reqId(request)); }
   });
   app.post<{ Body: { username?: unknown; password?: unknown } }>("/v1/auth/login", async (request, reply) => {
     if (!isOriginAllowed(request, config)) return publicError(reply, 403, "FORBIDDEN", reqId(request));
-    const bucketKey = `${request.ip}|${typeof request.body?.username === "string" ? request.body.username.slice(0, 64) : "?"}`; const previous = loginBuckets.get(bucketKey); const current = previous?.resetAt && previous.resetAt > Date.now() ? previous : { count: 0, resetAt: Date.now() + 60_000 };
+    const bucketKey = `${request.ip}|${typeof request.body?.username === "string" ? request.body.username.slice(0, 64) : "?"}`; const at = Date.now(); pruneLoginBuckets(at);
+    let current = loginBuckets.get(bucketKey);
+    if (current === undefined || current.expiresAt <= at) {
+      if (loginBuckets.size >= config.loginBucketMaximum) return publicError(reply, 429, "RATE_LIMITED", reqId(request));
+      current = { count: 0, expiresAt: at + config.loginAttemptWindowMs, generation: ++loginBucketGeneration };
+      loginBuckets.set(bucketKey, current); loginBucketExpiries.push({ key: bucketKey, expiresAt: current.expiresAt, generation: current.generation });
+    }
     if (current.count >= 5) return publicError(reply, 429, "RATE_LIMITED", reqId(request));
-    try { const result = await auth.login(request.body?.username as string, request.body?.password as string, reqId(request)); loginBuckets.delete(bucketKey); reply.setCookie(config.cookieName, result.cookie, { httpOnly: true, sameSite: "strict", secure: config.secureCookie, path: "/", maxAge: Math.floor(config.sessionTtlMs / 1000) }); return { csrfToken: result.principal.csrfToken }; } catch { current.count += 1; loginBuckets.set(bucketKey, current); return publicError(reply, 401, "UNAUTHORIZED", reqId(request)); }
+    current.count += 1;
+    try { const result = await auth.login(request.body?.username as string, request.body?.password as string, reqId(request)); current.count = 0; reply.setCookie(config.cookieName, result.cookie, { httpOnly: true, sameSite: "strict", secure: config.secureCookie, path: "/", maxAge: Math.floor(config.sessionTtlMs / 1000) }); return { csrfToken: result.principal.csrfToken }; } catch { return publicError(reply, 401, "UNAUTHORIZED", reqId(request)); }
   });
   app.post("/v1/auth/logout", async (request, reply) => { auth.revoke(request.cookies[config.cookieName], reqId(request)); reply.clearCookie(config.cookieName, { path: "/" }); return reply.code(204).send(); });
   app.get("/v1/session", async (request, reply) => { const principal = auth.authenticate(request.cookies[config.cookieName]); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request)); return { username: principal.username }; });
@@ -83,11 +100,25 @@ export function createControlPlane(config: ControlPlaneConfig): ControlPlane {
         if ("idempotencyKey" in message) {
           const scope = { direction: "client-to-control-plane" as const, messageKind: message.messageKind, contextId: message.projectId ?? message.taskId };
           const bodyDigest = digest(canonicalizeClientMutationForDigest(message)); const scopeValue = scopeKey(scope);
-          const row = database.connection.prepare("SELECT payload_digest, first_message_id, response_ref, recorded_at FROM idempotency_records WHERE scope_key=? AND idempotency_key=?").get(scopeValue, message.idempotencyKey) as { payload_digest: string; first_message_id: string; response_ref: string | null; recorded_at: string } | undefined;
-          const classification = classifyDelivery({ idempotencyKey: message.idempotencyKey, scope, payloadDigest: bodyDigest }, row === undefined ? undefined : { idempotencyKey: message.idempotencyKey, scope, payloadDigest: row.payload_digest, firstMessageId: row.first_message_id, responseRef: row.response_ref ?? undefined, recordedAt: row.recorded_at });
+          type StoredDelivery = { payload_digest: string; first_message_id: string; response_ref: string | null; recorded_at: string };
+          const find = (): StoredDelivery | undefined => database.connection.prepare("SELECT payload_digest, first_message_id, response_ref, recorded_at FROM idempotency_records WHERE scope_key=? AND idempotency_key=?").get(scopeValue, message.idempotencyKey) as StoredDelivery | undefined;
+          const classify = (row: StoredDelivery | undefined) => classifyDelivery({ idempotencyKey: message.idempotencyKey, scope, payloadDigest: bodyDigest }, row === undefined ? undefined : { idempotencyKey: message.idempotencyKey, scope, payloadDigest: row.payload_digest, firstMessageId: row.first_message_id, responseRef: row.response_ref ?? undefined, recordedAt: row.recorded_at });
+          let row: StoredDelivery | undefined; let classification: ReturnType<typeof classify>;
+          try {
+            ({ row, classification } = database.connection.transaction(() => {
+              const existing = find(); const result = classify(existing);
+              if (result !== "new") return { row: existing, classification: result };
+              database.connection.prepare("INSERT INTO idempotency_records(scope_key,idempotency_key,payload_digest,first_message_id,response_ref,recorded_at) VALUES(?,?,?,?,?,?)").run(scopeValue, message.idempotencyKey, bodyDigest, message.messageId, message.messageId, now());
+              return { row: find(), classification: result };
+            })());
+          } catch {
+            row = find();
+            if (row === undefined) throw new Error("idempotency storage unavailable");
+            classification = classify(row);
+          }
           if (classification === "conflict") return protocolError("IDEMPOTENCY_CONFLICT");
-          if (classification === "new") database.connection.prepare("INSERT INTO idempotency_records(scope_key,idempotency_key,payload_digest,first_message_id,response_ref,recorded_at) VALUES(?,?,?,?,?,?)").run(scopeValue, message.idempotencyKey, bodyDigest, message.messageId, message.messageId, now());
-          return send({ protocolVersion: "1.0", messageId: messageId(), messageKind: "request.accepted", sentAt: now(), payload: { acceptedMessageId: message.messageId, replayClassification: classification === "duplicate-same-request" ? classification : "new", resultRef: message.messageId } });
+          const originalId = row?.first_message_id ?? message.messageId; const resultRef = row?.response_ref ?? originalId;
+          return send({ protocolVersion: "1.0", messageId: messageId(), messageKind: "request.accepted", sentAt: now(), payload: { acceptedMessageId: originalId, replayClassification: classification === "duplicate-same-request" ? classification : "new", resultRef } });
         }
         if (message.messageKind === "stream.resume") {
           const cursor = message.payload.cursor; const stream = database.connection.prepare("SELECT head_sequence, oldest_retained_sequence FROM event_streams WHERE stream_id=?").get(cursor.streamId) as { head_sequence: number; oldest_retained_sequence: number } | undefined;

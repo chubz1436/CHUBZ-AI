@@ -16,6 +16,18 @@ const migrations: readonly Migration[] = [
     CREATE TABLE tasks (task_id TEXT PRIMARY KEY, project_id TEXT NOT NULL, state TEXT NOT NULL, attempt_id TEXT, blocked_context_json TEXT, updated_at TEXT NOT NULL);
     CREATE TABLE runtime_metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
   ` },
+  { version: 2, sql: `
+    CREATE TABLE administrator_singleton_guard (id INTEGER PRIMARY KEY CHECK (id = 1));
+    INSERT INTO administrator_singleton_guard(id)
+      SELECT CASE WHEN COUNT(*) <= 1 THEN 1 ELSE 2 END FROM administrators;
+    CREATE TRIGGER administrators_singleton_insert
+      BEFORE INSERT ON administrators
+      WHEN (SELECT COUNT(*) FROM administrators) >= 1
+      BEGIN SELECT RAISE(ABORT, 'administrator singleton invariant'); END;
+  ` },
+  { version: 3, sql: `
+    CREATE INDEX IF NOT EXISTS auth_events_occurred_at_idx ON auth_events(occurred_at, id);
+  ` },
 ];
 const checksum = (sql: string): string => createHash("sha256").update(sql).digest("hex");
 export class MigrationError extends Error { constructor() { super("Control Plane database migration failed."); this.name = "MigrationError"; } }
@@ -38,6 +50,7 @@ export class ControlPlaneDatabase {
         const migration = migrations.find((entry) => entry.version === record.version);
         if (migration === undefined || checksum(migration.sql) !== record.checksum) throw new MigrationError();
       }
+      if (known.some((entry, index) => entry.version !== index + 1)) throw new MigrationError();
       const apply = db.transaction(() => {
         for (const migration of migrations) {
           if (known.some((entry) => entry.version === migration.version)) continue;

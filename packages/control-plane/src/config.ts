@@ -17,6 +17,10 @@ export type ControlPlaneConfig = Readonly<{
   sessionIdleMs: number;
   requestBodyLimit: number;
   websocketMessageLimit: number;
+  loginAttemptWindowMs: number;
+  loginBucketMaximum: number;
+  authEventRetentionMs: number;
+  authEventMaximum: number;
 }>;
 
 export class ConfigurationError extends Error {
@@ -63,7 +67,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ControlPlaneCo
   const secureCookie = env["CONTROL_PLANE_SECURE_COOKIE"] === "true";
   if (secureCookie) throw new ConfigurationError("Secure cookies require a future TLS-only surface and are unavailable locally.");
   mkdirSync(dataDirectory, { recursive: true });
-  return Object.freeze({ environment, dataDirectory, databasePath, host: host as "127.0.0.1" | "::1", port, allowedOrigin, sessionSecret, cookieName: "chubz_session", secureCookie, logLevel: logLevel as ControlPlaneConfig["logLevel"], sessionTtlMs: positive(env["CONTROL_PLANE_SESSION_TTL_MS"], 8 * 60 * 60_000), sessionIdleMs: positive(env["CONTROL_PLANE_SESSION_IDLE_MS"], 30 * 60_000), requestBodyLimit: positive(env["CONTROL_PLANE_BODY_LIMIT"], 64 * 1024), websocketMessageLimit: positive(env["CONTROL_PLANE_WS_MESSAGE_LIMIT"], 64 * 1024) });
+  return Object.freeze({ environment, dataDirectory, databasePath, host: host as "127.0.0.1" | "::1", port, allowedOrigin, sessionSecret, cookieName: "chubz_session", secureCookie, logLevel: logLevel as ControlPlaneConfig["logLevel"], sessionTtlMs: positive(env["CONTROL_PLANE_SESSION_TTL_MS"], 8 * 60 * 60_000), sessionIdleMs: positive(env["CONTROL_PLANE_SESSION_IDLE_MS"], 30 * 60_000), requestBodyLimit: positive(env["CONTROL_PLANE_BODY_LIMIT"], 64 * 1024), websocketMessageLimit: positive(env["CONTROL_PLANE_WS_MESSAGE_LIMIT"], 64 * 1024), loginAttemptWindowMs: positive(env["CONTROL_PLANE_LOGIN_ATTEMPT_WINDOW_MS"], 60_000), loginBucketMaximum: positive(env["CONTROL_PLANE_LOGIN_BUCKET_MAXIMUM"], 1_024), authEventRetentionMs: positive(env["CONTROL_PLANE_AUTH_EVENT_RETENTION_MS"], 30 * 24 * 60 * 60_000), authEventMaximum: positive(env["CONTROL_PLANE_AUTH_EVENT_MAXIMUM"], 10_000) });
 }
 
 export function createTestConfig(dataDirectory: string): ControlPlaneConfig {
