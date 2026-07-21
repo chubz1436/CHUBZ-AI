@@ -59,6 +59,10 @@ export const BLOCKED_REASONS = Object.freeze([
   "policy",
   "abandoned",
   "execution-unknown",
+  /** M1F: trusted readiness/routing snapshots found no eligible worker. */
+  "no-eligible-worker",
+  /** M1F: authoritative lease snapshot invalidates the pending operation. */
+  "stale-lease",
 ] as const);
 
 export const BlockedReasonSchema = z.enum(BLOCKED_REASONS);

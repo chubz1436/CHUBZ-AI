@@ -66,6 +66,8 @@ describe("task states", () => {
       "policy",
       "abandoned",
       "execution-unknown",
+      "no-eligible-worker",
+      "stale-lease",
     ]);
     expect(BlockedReasonSchema.safeParse("execution-unknown").success).toBe(true);
     expect(BlockedReasonSchema.safeParse("EXECUTION-UNKNOWN").success).toBe(false);

@@ -152,7 +152,10 @@ export const BLOCKED_OPERATION_MATRIX: Readonly<Record<BlockedOperation, Blocked
     }),
     "worker-dispatch": Object.freeze({
       from: "AWAITING_DISPATCH",
-      ordinaryReasons: Object.freeze(["queue-lock", "conflict", "policy", "abandoned"] as const),
+      // M1F: no-eligible-worker is safe only before dispatch. stale-lease
+      // also remains a dispatch-stage blocker and must receive a fresh
+      // operation identity on recovery (enforced below).
+      ordinaryReasons: Object.freeze(["queue-lock", "conflict", "policy", "abandoned", "no-eligible-worker", "stale-lease"] as const),
       executionUnknownAllowed: true,
       ordinaryRecoveryTarget: "AWAITING_DISPATCH",
     }),
@@ -168,7 +171,9 @@ export const BLOCKED_OPERATION_MATRIX: Readonly<Record<BlockedOperation, Blocked
       // File-overlap conflicts block integration (§12.1); ordinary
       // recovery returns to APPROVED — the approved stage is never
       // discarded by ordinary recovery.
-      ordinaryReasons: Object.freeze(["conflict"] as const),
+      // A lease found stale before integration may return to the approved
+      // stage only with owner action and a new integration operation.
+      ordinaryReasons: Object.freeze(["conflict", "stale-lease"] as const),
       executionUnknownAllowed: true,
       ordinaryRecoveryTarget: "APPROVED",
     }),
@@ -608,6 +613,20 @@ function blockedOriginDecision(
       "ACTOR_NOT_PERMITTED",
       `Actor '${request.actor}' may not perform ordinary blocked recovery (permitted: control-plane, owner).`,
     );
+  }
+  // M1F coordination blockers never permit reuse of the operation whose
+  // binding has become invalid. A stale lease additionally requires owner
+  // action; a control-plane actor cannot silently replace a lease.
+  if (ctx.blockedReason === "stale-lease" && request.actor !== "owner") {
+    return deny("ACTOR_NOT_PERMITTED", "Only the owner may recover BLOCKED(stale-lease).");
+  }
+  if (ctx.blockedReason === "no-eligible-worker" || ctx.blockedReason === "stale-lease") {
+    if (request.nextOperationId === undefined) {
+      return deny("NEW_OPERATION_ID_REQUIRED", `${ctx.blockedReason} recovery requires a NEW operation identity.`);
+    }
+    if (request.nextOperationId === ctx.operationId) {
+      return deny("OPERATION_ID_REUSED", "The replacement operation identity must differ from the blocked operation.");
+    }
   }
   return allowRule(
     Object.freeze({

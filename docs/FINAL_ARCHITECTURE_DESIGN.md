@@ -1,6 +1,6 @@
 # Final Architecture Design
 
-> **STATUS: ACCEPTED ARCHITECTURE (decisions D-006 … D-032) — M1A-M1D CONTRACTS ACCEPTED; M1E PURE CONTRACT WORK ACTIVE AND UNACCEPTED; RUNTIME NOT YET IMPLEMENTED**
+> **STATUS: ACCEPTED ARCHITECTURE (decisions D-006 … D-032) — M1A-M1E CONTRACTS ACCEPTED; M1F ADAPTER & COORDINATION CONTRACTS ACTIVE AND UNACCEPTED ON `task/m1f-adapter-coordination-contracts`; RUNTIME NOT YET IMPLEMENTED**
 >
 > Author: Claude Code / BUNSO (Fable 5), lead and final designer per accepted decision D-005.
 > Date: 2026-07-10. Revised following Bantay's required revisions R1–R7; accepted by Kenneth / CHUBZ the same day.
@@ -383,7 +383,7 @@ Authority model: **the Control Plane records state and is the actor for system t
 
 Retries and revisions never mutate a previous attempt's captured record — each attempt is immutable once left `RUNNING`. Abandoned tasks (no owner action for a configurable period, default 14 days) are auto-moved to `BLOCKED` with a reminder; stale approvals expire (§ security doc).
 
-`BLOCKED` carries a machine-readable **reason code** rather than spawning extra visible states: `queue-lock`, `conflict`, `missing-context`, `policy`, `abandoned`, and `execution-unknown`. `execution-unknown` is set when a privileged operation (e.g., finalizing an approved commit) was journaled as *started* but its completion cannot be proven after a crash or disconnect — the task then requires owner-reviewed reconciliation and is **never blindly retried** (§16).
+`BLOCKED` carries a machine-readable **reason code** rather than spawning extra visible states: `queue-lock`, `conflict`, `missing-context`, `policy`, `abandoned`, `execution-unknown`, and M1F's `no-eligible-worker` and `stale-lease`. `execution-unknown` is set when a privileged operation (e.g., finalizing an approved commit) was journaled as *started* but its completion cannot be proven after a crash or disconnect — the task then requires owner-reviewed reconciliation and is **never blindly retried** (§16). M1F recovery for its new reasons requires the documented trusted snapshots and a new operation identity; stale-lease also requires owner action.
 
 **Trusted blocked context (D-021, delivery hardened by D-022):** `BLOCKED` preserves what was blocked — source state, in-flight operation (`context-preparation`, `worker-dispatch`, `worker-execution`, or `integration`), reason, attempt identity, operation identity, and (for `execution-unknown`) the trusted journal/start reference. **The current task snapshot (state, attempt identity, stored blocked context) always comes from the trusted operational store and reaches transition authorization as a separate input; the requested transition has no field capable of replacing the stored BLOCKED context** — substitution is structurally impossible, not merely validated. Contexts are cross-checked against a source/operation/reason matrix, and `execution-unknown` is legal only where an operation was recorded as started (never from context preparation).
 

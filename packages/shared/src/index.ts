@@ -11,6 +11,9 @@
  * outside this package. M1E adds pure capture, artifact, projection, and
  * review-package contracts; it does not perform runtime capture, storage,
  * filesystem, archive, Bridge, adapter, or network work.
+ * M1F adds versioned adapter-readiness, coordination, lease, handoff,
+ * quota, evidence-taxonomy, lifecycle, and journal-reconciliation contracts.
+ * It remains pure and contains no adapter or worker execution implementation.
  */
 export * from "./task-states.js";
 export * from "./task-transitions.js";
@@ -20,3 +23,4 @@ export * from "./protocol/index.js";
 export * from "./approval-security.js";
 export * from "./redaction.js";
 export * from "./capture-projection.js";
+export * from "./adapter-coordination.js";
