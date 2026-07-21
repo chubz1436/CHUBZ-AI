@@ -5,6 +5,7 @@ import {
   AdapterReadinessSchema,
   AssignmentSchema,
   EvidenceRecordSchema,
+  EVIDENCE_AUTHORITY_BY_KIND,
   HandoffSchema,
   JournalEntrySchema,
   LeaseSchema,
@@ -19,6 +20,7 @@ import {
   digestWriteScope,
   evaluateAdapterContinuation,
   evaluateAssignmentDispatch,
+  evaluateCancellationEvidence,
   evaluateEvidenceBinding,
   evaluateHandoff,
   evaluateJournalReconciliation,
@@ -40,7 +42,7 @@ import {
 const now = "2026-07-21T01:00:00Z";
 const later = "2026-07-21T02:00:00Z";
 const readiness = () => ({
-  coordinationVersion: ADAPTER_COORDINATION_VERSION, readinessId: "ready-1", adapterId: "codex-cli", workerId: "codex", connectorTier: "cli", providerId: "openai", runtimeId: "node", installedVersion: "1.2.3", executableId: "exec-1", executableHash: "sha256:" + "a".repeat(64), authenticationState: "authenticated", sandboxCapability: "probed", noninteractiveCapability: "validated", structuredOutputCapability: "observed", cancellationCapability: "probed", resumeCapability: "unknown", healthStatus: "healthy", quotaVisibility: "observed", freezeState: "enabled", capabilityProbeAt: now, readinessState: "ready", capabilities: [{ capability: "code-edit", assurance: "validated", evidenceRef: "evidence-1" }], evidenceRefs: ["evidence-1"],
+  coordinationVersion: ADAPTER_COORDINATION_VERSION, readinessId: "ready-1", adapterId: "codex-cli", workerId: "codex", connectorTier: "cli", providerId: "openai", runtimeId: "node", installedVersion: "1.2.3", executableId: "exec-1", executableHash: "sha256:" + "a".repeat(64), authenticationState: "authenticated", sandboxCapability: "probed", noninteractiveCapability: "validated", structuredOutputCapability: "observed", cancellationCapability: "probed", resumeCapability: "probed", healthStatus: "healthy", quotaVisibility: "observed", freezeState: "enabled", capabilityProbeAt: now, readinessState: "ready", capabilities: [{ capability: "code-edit", assurance: "validated", evidenceRef: "evidence-1" }], evidenceRefs: ["evidence-1"],
 });
 const scopeCore = () => ({
   scopeVersion: ADAPTER_COORDINATION_VERSION, scopeId: "scope-1", repositoryRootId: "repo-1", worktreeRootId: "worktree-1", taskId: "task-1", attemptId: "attempt-1", operationId: "op-1", allowedExactPaths: ["packages/shared/src/file.ts"], allowedPathPatterns: ["packages/shared/test/*.test.ts"], deniedPathClasses: ["credentials", "production", "infrastructure", "database", "mikrotik", "deployment", "unrelated-repository"], readOnlyPaths: ["pnpm-lock.yaml"], generatedArtifactRoot: "artifacts", permissions: { create: true, modify: true, delete: false }, maxFiles: 10, maxBytes: 10_000,
@@ -56,10 +58,26 @@ describe("M1F adapter readiness and runs", () => {
   });
 
   it("keeps run states, cancellation confirmation, resume identity, and malformed output explicit", () => {
-    const run = { coordinationVersion: ADAPTER_COORDINATION_VERSION, adapterRunId: "run-1", taskId: "task-1", attemptId: "attempt-1", operationId: "op-1", workerId: "codex", adapterId: "codex-cli", connectorTier: "cli", readinessSnapshotRef: "ready-1", invocationMode: "noninteractive", requestedCapability: "code-edit", startedAt: now, endedAt: later, structuredOutputState: "malformed", cancellationState: "unconfirmed", resumedFromRunId: null, quotaSnapshotRef: "quota-1", lifecycleState: "interrupted", captureRefs: ["capture-1"], evidenceRefs: ["evidence-1"], blockedReason: null, runtimeProvenanceRefs: ["prov-1"] };
+    const run = { coordinationVersion: ADAPTER_COORDINATION_VERSION, adapterRunId: "run-1", taskId: "task-1", attemptId: "attempt-1", operationId: "op-1", workerId: "codex", adapterId: "codex-cli", connectorTier: "cli", readinessSnapshotRef: "ready-1", invocationMode: "noninteractive", requestedCapability: "code-edit", startedAt: now, endedAt: later, structuredOutputState: "malformed", cancellationState: "unconfirmed", resumedFromRunId: null, quotaSnapshotRef: "quota-1", lifecycleState: "interrupted", captureRefs: ["capture-1"], evidenceRefs: ["evidence-1"], blockedReason: null, runtimeProvenanceRefs: ["prov-1"], cancellationEvidenceRefs: [] };
     expect(parseAdapterRun(run).ok).toBe(true);
     expect(parseAdapterRun({ ...run, resumedFromRunId: "run-1" }).ok).toBe(false);
     expect(parseAdapterRun({ ...run, lifecycleState: "completed", endedAt: null }).ok).toBe(false);
+  });
+
+  it("rejects contradictory ready states and accepts only healthy authenticated probed readiness", () => {
+    expect(parseAdapterReadiness(readiness()).ok).toBe(true);
+    for (const patch of [{ authenticationState: "expired" }, { authenticationState: "missing" }, { healthStatus: "unhealthy" }, { freezeState: "frozen" }, { noninteractiveCapability: "unavailable" }, { cancellationCapability: "unknown" }]) expect(parseAdapterReadiness({ ...readiness(), ...patch }).ok).toBe(false);
+  });
+
+  it("requires confirmed, exact-run cancellation evidence for cancelled runs", () => {
+    const run = { coordinationVersion: ADAPTER_COORDINATION_VERSION, adapterRunId: "run-1", taskId: "task-1", attemptId: "attempt-1", operationId: "op-1", workerId: "codex", adapterId: "codex-cli", connectorTier: "cli", readinessSnapshotRef: "ready-1", invocationMode: "noninteractive", requestedCapability: "code-edit", startedAt: now, endedAt: later, structuredOutputState: "received", cancellationState: "confirmed", resumedFromRunId: null, quotaSnapshotRef: null, lifecycleState: "cancelled", captureRefs: [], evidenceRefs: [], blockedReason: null, runtimeProvenanceRefs: [], cancellationEvidenceRefs: ["cancel-1"] };
+    const evidence = { coordinationVersion: ADAPTER_COORDINATION_VERSION, evidenceId: "cancel-1", kind: "cancellation-termination", subject: { taskId: "task-1", attemptId: "attempt-1", operationId: "op-1", adapterRunId: "run-1", leaseId: null, artifactId: null }, sourceId: "bridge-1", authority: "observed", requiredBindings: ["task", "attempt", "operation", "adapter-run"], permittedUses: ["reconciliation"], prohibitedTrustElevation: true, reference: "termination-1" };
+    expect(parseAdapterRun(run).ok).toBe(true);
+    expect(parseAdapterRun({ ...run, cancellationState: "not-requested" }).ok).toBe(false);
+    expect(parseAdapterRun({ ...run, cancellationState: "unconfirmed" }).ok).toBe(false);
+    expect(parseAdapterRun({ ...run, lifecycleState: "completed" }).ok).toBe(false);
+    expect(evaluateCancellationEvidence(run, { evidence: [evidence] }).code).toBe("VALID");
+    expect(evaluateCancellationEvidence(run, { evidence: [{ ...evidence, subject: { ...evidence.subject, adapterRunId: "run-2" } }] }).code).toBe("EVIDENCE_MISMATCH");
   });
 });
 
@@ -75,18 +93,19 @@ describe("M1F assignment and scope authority", () => {
 
   it("does not let a recommendation or stale/cross-bound assignment authorize dispatch", () => {
     const digest = digestWriteScope(scopeCore()); if (!digest.ok) throw new Error("fixture digest failed");
-    const context = { now, readiness: readiness(), quota: quota(), writeScope: { ...scopeCore(), scopeHash: digest.value }, approvalGrant: null };
+    const context = { now, readiness: readiness(), quota: quota(), writeScope: { ...scopeCore(), scopeHash: digest.value }, lease: lease(), approvalGrant: null };
     expect(evaluateAssignmentDispatch({ ...assignment(), kind: "recommendation" }, context).code).toBe("RECOMMENDATION_NOT_AUTHORIZATION");
     const dispatched = { ...assignment(), kind: "dispatched", ownerApprovalRef: "approval-1", dispatchEventRef: "event-1", adapterRunId: "run-1" };
     expect(evaluateAssignmentDispatch(dispatched, context).code).toBe("DISPATCHABLE");
     expect(evaluateAssignmentDispatch({ ...dispatched, taskId: "task-2" }, context).code).toBe("CROSS_SCOPE");
     expect(evaluateAssignmentDispatch({ ...dispatched, expiresAt: now }, context).code).toBe("STALE");
+    expect(evaluateAssignmentDispatch(dispatched, { ...context, lease: { ...lease(), status: "released" } }).code).toBe("LEASE_NOT_VALID");
   });
 
   it("requires validated requested capabilities and a usable snapshot, rather than labels or stale quota", () => {
     const digest = digestWriteScope(scopeCore()); if (!digest.ok) throw new Error("fixture digest failed");
     const dispatched = { ...assignment(), kind: "dispatched", ownerApprovalRef: "approval-1", dispatchEventRef: "event-1", adapterRunId: "run-1" };
-    const context = { now, readiness: readiness(), quota: quota(), writeScope: { ...scopeCore(), scopeHash: digest.value }, approvalGrant: null };
+    const context = { now, readiness: readiness(), quota: quota(), writeScope: { ...scopeCore(), scopeHash: digest.value }, lease: lease(), approvalGrant: null };
     expect(evaluateAssignmentDispatch(dispatched, { ...context, readiness: { ...readiness(), capabilities: [{ capability: "code-edit", assurance: "declared", evidenceRef: null }] } }).code).toBe("CAPABILITY_NOT_READY");
     expect(evaluateAssignmentDispatch(dispatched, { ...context, quota: { ...quota(), expiresAt: now } }).code).toBe("QUOTA_NOT_USABLE");
   });
@@ -101,6 +120,9 @@ describe("M1F assignment and scope authority", () => {
     expect(parseWriteScope({ ...signed, allowedExactPaths: ["../secret"] }).ok).toBe(false);
     expect(parseWriteScope({ ...signed, allowedPathPatterns: ["*"] }).ok).toBe(false);
     expect(parseWriteScope({ ...signed, repositoryRootId: "C:/owner-copy" }).ok).toBe(false);
+    expect(parseWriteScope({ ...signed, allowedPathPatterns: ["src/**"] }).ok).toBe(false);
+    expect(parseWriteScope({ ...signed, allowedExactPaths: ["artifacts/output.txt"] }).ok).toBe(false);
+    expect(parseWriteScope({ ...signed, allowedPathPatterns: ["artifacts/*.txt"] }).ok).toBe(false);
   });
 });
 
@@ -111,6 +133,10 @@ describe("M1F lease and handoff safety", () => {
     expect(evaluateLease(lease(), { ...expected, now: later }).code).toBe("EXPIRED");
     expect(evaluateLease(lease(), { ...expected, generation: 0, action: "renew" }).code).toBe("STALE_GENERATION");
     expect(evaluateLease(lease(), { ...expected, workerId: "other", action: "release" }).code).toBe("RELEASE_BY_NON_HOLDER");
+    expect(evaluateLease(lease(), { ...expected, adapterId: "other-adapter" }).code).toBe("WRONG_HOLDER");
+    expect(evaluateLease({ ...lease(), status: "released" }, expected).code).toBe("RELEASED");
+    expect(evaluateLease({ ...lease(), status: "revoked" }, expected).code).toBe("REVOKED");
+    expect(evaluateLease({ ...lease(), status: "superseded", supersededByLeaseId: "lease-2" }, expected).code).toBe("SUPERSEDED");
     expect(evaluateLease(lease(), { ...expected, concurrentLease: { ...lease(), leaseId: "lease-2", holderWorkerId: "other" } }).code).toBe("CONFLICTING_EXCLUSIVE_LEASE");
   });
 
@@ -127,6 +153,8 @@ describe("M1F lease and handoff safety", () => {
     expect(evaluateHandoff(handoff, context).code).toBe("LEASE_RELEASE_REQUIRED");
     expect(evaluateHandoff(handoff, { ...context, targetLease: { ...lease(), leaseId: "lease-2", holderWorkerId: "reviewer", holderAdapterId: "manual-relay" } }).code).toBe("CONCURRENT_EXCLUSIVE_HOLDERS");
     expect(evaluateHandoff(handoff, { ...context, sourceLease: { ...lease(), status: "released" } }).code).toBe("VALID");
+    const transfer = { ...handoff, leaseDisposition: "owner-approved-transfer-required" as const };
+    expect(evaluateHandoff(transfer, { ...context, sourceLease: { ...lease(), status: "revoked" }, targetLease: { ...lease(), leaseId: "lease-2", holderWorkerId: "reviewer", holderAdapterId: "manual-relay", status: "revoked" } }).code).toBe("TARGET_LEASE_MISMATCH");
   });
 });
 
@@ -139,6 +167,9 @@ describe("M1F quota, evidence, lifecycle, and journal contracts", () => {
     expect(classifyQuota({ ...quota(), rateLimitState: "limited" }, now)).toBe("rate-limited");
     expect(classifyQuota({ ...quota(), source: "owner-entered", confidence: "owner-attested" }, now)).toBe("confidence-too-low");
     expect(parseQuotaSnapshot({ ...quota(), source: "owner-entered", confidence: "validated" }).ok).toBe(false);
+    expect(parseQuotaSnapshot({ ...quota(), used: 7, remaining: 4 }).ok).toBe(false);
+    expect(parseQuotaSnapshot({ ...quota(), remaining: 1.5 }).ok).toBe(false);
+    expect(parseQuotaSnapshot({ ...quota(), used: -1 }).ok).toBe(false);
   });
 
   it("prevents manual relay and worker claims from being labeled as automated validation", () => {
@@ -148,6 +179,9 @@ describe("M1F quota, evidence, lifecycle, and journal contracts", () => {
     expect(parseEvidenceRecord({ ...evidence, kind: "worker-claim", authority: "validated" }).ok).toBe(false);
     expect(evaluateEvidenceBinding(evidence, { ...evidence.subject, taskId: "task-2" }).code).toBe("CROSS_SCOPE");
     expect(parseEvidenceRecord({ ...evidence, requiredBindings: ["task", "attempt", "operation", "lease"] }).ok).toBe(false);
+    for (const [kind, authorities] of Object.entries(EVIDENCE_AUTHORITY_BY_KIND)) expect(parseEvidenceRecord({ ...evidence, evidenceId: `ev-${kind}`, kind, authority: authorities[0] }).ok).toBe(true);
+    expect(parseEvidenceRecord({ ...evidence, kind: "reviewed-artifact-import", authority: "validated" }).ok).toBe(false);
+    expect(parseEvidenceRecord({ ...evidence, kind: "approval", authority: "validated" }).ok).toBe(false);
   });
 
   it("distinguishes duplicate delivery from conflicting cursor and idempotency reuse", () => {
@@ -155,7 +189,10 @@ describe("M1F quota, evidence, lifecycle, and journal contracts", () => {
     expect(parseLifecycleEvent(event).ok).toBe(true);
     expect(classifyLifecycleDelivery(event, event)).toBe("duplicate");
     expect(classifyLifecycleDelivery({ ...event, eventId: "event-2" }, event)).toBe("conflicting-cursor");
-    expect(classifyLifecycleDelivery({ ...event, cursor: 2 }, event)).toBe("conflicting-idempotency");
+    expect(classifyLifecycleDelivery({ ...event, cursor: 2 }, event)).toBe("conflicting-event-id");
+    expect(classifyLifecycleDelivery({ ...event, eventId: "event-2", idempotencyKey: "event-key-2", cursor: 0 }, event)).toBe("out-of-order");
+    expect(classifyLifecycleDelivery({ ...event, eventId: "event-2", idempotencyKey: "event-key-2", cursor: 2 }, event)).toBe("new");
+    expect(classifyLifecycleDelivery({ ...event, eventId: "event-2", extra: "no" }, event)).toBe("malformed");
   });
 
   it("requires owner plus trusted runtime evidence for execution-unknown reconciliation and preserves original operation", () => {
@@ -171,7 +208,7 @@ describe("M1F quota, evidence, lifecycle, and journal contracts", () => {
   });
 
   it("binds a resume to the exact interrupted run, attempt, operation, worker, and adapter", () => {
-    const prior = { coordinationVersion: ADAPTER_COORDINATION_VERSION, adapterRunId: "run-1", taskId: "task-1", attemptId: "attempt-1", operationId: "op-1", workerId: "codex", adapterId: "codex-cli", connectorTier: "cli", readinessSnapshotRef: "ready-1", invocationMode: "noninteractive", requestedCapability: "code-edit", startedAt: now, endedAt: later, structuredOutputState: "received", cancellationState: "not-requested", resumedFromRunId: null, quotaSnapshotRef: "quota-1", lifecycleState: "interrupted", captureRefs: [], evidenceRefs: [], blockedReason: null, runtimeProvenanceRefs: [] };
+    const prior = { coordinationVersion: ADAPTER_COORDINATION_VERSION, adapterRunId: "run-1", taskId: "task-1", attemptId: "attempt-1", operationId: "op-1", workerId: "codex", adapterId: "codex-cli", connectorTier: "cli", readinessSnapshotRef: "ready-1", invocationMode: "noninteractive", requestedCapability: "code-edit", startedAt: now, endedAt: later, structuredOutputState: "received", cancellationState: "not-requested", resumedFromRunId: null, quotaSnapshotRef: "quota-1", lifecycleState: "interrupted", captureRefs: [], evidenceRefs: [], blockedReason: null, runtimeProvenanceRefs: [], cancellationEvidenceRefs: [] };
     const resumed = { ...prior, adapterRunId: "run-2", resumedFromRunId: "run-1", lifecycleState: "running", endedAt: null };
     expect(evaluateAdapterContinuation(resumed, prior).code).toBe("VALID");
     expect(evaluateAdapterContinuation({ ...resumed, attemptId: "attempt-2" }, prior).code).toBe("CROSS_SCOPE");
@@ -193,7 +230,7 @@ describe("M1F hostile-input and export boundary behavior", () => {
     expect(parseLease({ ...lease(), status: "owned-forever" }).ok).toBe(false);
     expect(parseQuotaSnapshot({ ...quota(), coordinationVersion: "2.0" }).ok).toBe(false);
     expect(parseLifecycleEvent({ ...({ coordinationVersion: ADAPTER_COORDINATION_VERSION, eventId: "event-1", cursor: 1, idempotencyKey: "event-key-1", eventKind: "dispatch", taskId: "task-1", attemptId: "attempt-1", operationId: "op-1", adapterRunId: null, leaseId: null, workerId: "codex", adapterId: "codex-cli", occurredAt: now, evidenceRefs: [], trace: { traceId: "trace-1", spanId: "span-1", parentSpanId: null } }), evidenceRefs: Array.from({ length: 65 }, (_, i) => `ev-${i}`) }).ok).toBe(false);
-    expect(parseAdapterRun({ coordinationVersion: ADAPTER_COORDINATION_VERSION, adapterRunId: "run-1", taskId: "task-1", attemptId: "attempt-1", operationId: "op-1", workerId: "codex", adapterId: "codex-cli", connectorTier: "cli", readinessSnapshotRef: "ready-1", invocationMode: "noninteractive", requestedCapability: "code-edit", startedAt: now, endedAt: later, structuredOutputState: "received", cancellationState: "not-requested", resumedFromRunId: null, quotaSnapshotRef: null, lifecycleState: "completed", captureRefs: Array.from({ length: 32 }, (_, i) => `capture-${i}`), evidenceRefs: Array.from({ length: 32 }, (_, i) => `evidence-${i}`), blockedReason: null, runtimeProvenanceRefs: ["provenance-1"] }).ok).toBe(false);
+    expect(parseAdapterRun({ coordinationVersion: ADAPTER_COORDINATION_VERSION, adapterRunId: "run-1", taskId: "task-1", attemptId: "attempt-1", operationId: "op-1", workerId: "codex", adapterId: "codex-cli", connectorTier: "cli", readinessSnapshotRef: "ready-1", invocationMode: "noninteractive", requestedCapability: "code-edit", startedAt: now, endedAt: later, structuredOutputState: "received", cancellationState: "not-requested", resumedFromRunId: null, quotaSnapshotRef: null, lifecycleState: "completed", captureRefs: Array.from({ length: 32 }, (_, i) => `capture-${i}`), evidenceRefs: Array.from({ length: 32 }, (_, i) => `evidence-${i}`), blockedReason: null, runtimeProvenanceRefs: ["provenance-1"], cancellationEvidenceRefs: [] }).ok).toBe(false);
   });
 
   it("exports only pure schema/parser/evaluator contracts", () => {
