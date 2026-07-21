@@ -1,6 +1,6 @@
 # Phased Implementation Plan
 
-> **STATUS: ACCEPTED PLAN — M1A-M1D CONTRACTS COMPLETE AND ACCEPTED ON `main`; M1E PURE CONTRACT WORK ACTIVE AND UNACCEPTED; RUNTIME IMPLEMENTATION NOT STARTED**
+> **STATUS: ACCEPTED PLAN — M1A-M1E CONTRACTS COMPLETE AND ACCEPTED; M1E PASSED FINAL INDEPENDENT REVIEW; RUNTIME IMPLEMENTATION NOT STARTED**
 >
 > Author: Claude Code / BUNSO (Fable 5), per accepted decision D-005; implementation-worker assignment amended by D-019.
 > Date: 2026-07-10. Revised following Bantay's required revisions R1–R7.
@@ -8,9 +8,9 @@
 
 Worker roles throughout (D-005, D-019, D-027): **Codex** is the current primary implementation worker; **BUNSO** remains the lead architecture designer and governing architecture source; **Bantay** reviews security, scope, and completeness; **Antigravity** is secondary and capability-probed; and **Chubz** approves every phase gate. No workers edit the same files concurrently. A task-specific assignment never overrides owner or repository policy.
 
-> **M1D STATUS (2026-07-20):** M1D Redaction Library is complete and accepted after independent review PASS, with 364 tests and typecheck passing. It remains pure shared denylist, detector, redaction-contract, corpus-test, and export work; runtime context/capture integration remains deferred. Redaction is intentionally conservative and best-effort; future policy expansion may add unsupported secret patterns. M1E is active and unaccepted after explicit owner GO; M1F, M2, and later milestones remain unauthorized pending separate explicit owner GO.
+> **M1D STATUS (2026-07-20):** M1D Redaction Library is complete and accepted after independent review PASS, with 364 tests and typecheck passing. It remains pure shared denylist, detector, redaction-contract, corpus-test, and export work; runtime context/capture integration remains deferred. Redaction is intentionally conservative and best-effort; future policy expansion may add unsupported secret patterns. M1E is accepted; M1F, M2, and later milestones remain unauthorized pending a separate explicit owner GO.
 
-> **M1E STATUS (2026-07-20):** M1E Capture and Projection Contracts received explicit owner GO and is active on `task/m1e-capture-projection-contracts`, with Codex as implementation worker. It is pure shared contract work only and remains unaccepted pending independent review and separate owner acceptance. Snapshot-shaped values receive structural validation only; a future authoritative runtime store must independently load and establish their authority. M1E does not authorize runtime capture, snapshot loading, persistence, filesystem or Bridge Log writing, storage, archives, adapters, database, UI, network, deployment, or production behavior. M1F, M2, and later milestones remain not started and unauthorized pending separate explicit owner GO.
+> **M1E STATUS (2026-07-21):** M1E Capture and Projection Contracts passed final independent read-only review and were accepted by Owner/Bantay, with 376 tests and successful typecheck. It remains pure shared contract work only. Snapshot-shaped values receive structural validation only; a future authoritative runtime store must independently load and establish authority and custody. M1E does not implement or authorize runtime capture, snapshot loading, persistence, filesystem or Bridge Log writing, storage, archives, adapters, database, UI, network, deployment, or production behavior. M1F, M2, and later milestones remain not started and unauthorized; M1F requires a separate explicit owner GO.
 
 ---
 
@@ -59,7 +59,7 @@ Performed by **Antigravity** (read-only and trivially reversible checks), comple
 **Tests:** none (no code).
 **Risks:** design churn delaying start → time-box review to one round plus one revision. Phase 0B may invalidate connector assumptions (U-1/U-2); that is its purpose, and manual relay absorbs the outcome.
 **Rollback:** none needed — documents only.
-**STOP POINT (status aligned 2026-07-20):** M1A through M1D are completed and accepted; M1D was accepted after independent review PASS with 364 tests and typecheck passing. **M1E is active and unaccepted after explicit owner GO; M1F, M2, and all later milestones are not started or authorized. M1E completion requires independent review and separate owner acceptance.**
+**STOP POINT (status aligned 2026-07-21):** M1A through M1E are completed and accepted; M1E passed final independent review with 376 tests and successful typecheck. **M1F, M2, and all later milestones are not started or authorized. M1F requires a separate explicit owner GO.**
 
 **Historical implementation evidence:** A separate BUNSO repository-backed Codex experiment is recorded in [BUNSO_EXPERIMENT_ADOPTION_PLAN.md](architecture/BUNSO_EXPERIMENT_ADOPTION_PLAN.md). Its compatible behavior may be selectively reimplemented only through the existing M1C–M1F and runtime milestone gates; it does not authorize a merge, cherry-pick, replacement, or earlier milestone start.
 
@@ -194,11 +194,11 @@ Performed by **Antigravity** (read-only and trivially reversible checks), comple
 
 ---
 
-## First Implementation Tasks — Bounded Split `M1A–M1D COMPLETE AND ACCEPTED; M1E ACTIVE AND UNACCEPTED; M1F, M2, AND LATER NOT STARTED AND UNAUTHORIZED`
+## First Implementation Tasks — Bounded Split `M1A–M1E COMPLETE AND ACCEPTED; M1F, M2, AND LATER NOT STARTED AND UNAUTHORIZED`
 
 The former single `packages/shared` task is split into six bounded subtasks. **The assigned implementation worker receives exactly one subtask at a time, each dispatched only after owner approval of the previous one's review.** Codex is the current primary implementation worker; BUNSO remains the governing architecture source and may be assigned only with explicit owner direction. No two workers edit the same files concurrently. All M1 subtasks are pure library code — no network, no filesystem side effects, no framework.
 
-Status (aligned 2026-07-20): Phase 0B completed with a conditional pass and owner review. **M1A Core Contracts, M1B Protocol Contracts, M1C Approval-Security Contracts, and M1D Redaction Library are completed and accepted; M1D received independent review PASS with 364 tests and typecheck passing.** Redaction remains intentionally conservative and best-effort, with policy expansion deferred. M1E is active and unaccepted after explicit owner GO; M1F and later milestones remain not started and require separate explicit GO.
+Status (aligned 2026-07-21): Phase 0B completed with a conditional pass and owner review. **M1A Core Contracts, M1B Protocol Contracts, M1C Approval-Security Contracts, M1D Redaction Library, and M1E Capture and Projection Contracts are completed and accepted; M1E passed final independent review with 376 tests and successful typecheck.** Redaction remains intentionally conservative and best-effort, with policy expansion deferred. M1F and later milestones remain not started and require a separate explicit owner GO.
 
 - **M1A — Core contracts:** task states and the legal-transition table (FINAL_ARCHITECTURE_DESIGN.md §10, including `BLOCKED` reason codes), the twelve-command grammar, and the worker manifest schema (§8.3). **Unit tests only** — every legal transition accepted, every illegal transition rejected.
 - **M1B — Protocol contracts:** client↔Control-Plane and Control-Plane↔Bridge message envelopes, idempotency keys, event cursors. **Unit tests only.**
@@ -221,7 +221,7 @@ The M1C owner GO named its bounded scope and Codex assignment, confirmed M1B mer
 |---|---|---|
 | 0A | Owner GO on this package post-Bantay review — **granted** | Decisions resolved — **completed** |
 | 0B | Phase 0A complete — **entered** | Antigravity validation executed and U-1/U-2 answered, then owner reviews the report — **completed, conditional pass** |
-| 1 | Phase 0B passed, owner reviewed the validation report, and each bounded M1 task has its own GO — **M1A, M1B, and M1C are complete and accepted on `main`; M1F follows M1E before M2; the next milestone requires a separate explicit GO** | Live demo + acceptance list + security reviews |
+| 1 | Phase 0B passed, owner reviewed the validation report, and each bounded M1 task has its own GO — **M1A through M1E are complete and accepted on `main`; M1F follows before M2 and requires a separate explicit owner GO** | Live demo + acceptance list + security reviews |
 | 2 | Owner GO | §18 checklist evidenced; explicit remote-enable decision |
 | 3 | Owner GO | Adapter contract suite green per adapter |
 | 4 | Owner GO | Concurrency + hardening acceptance tests |
