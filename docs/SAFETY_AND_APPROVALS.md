@@ -1,8 +1,8 @@
 # Safety and Approvals
 
-> **M2 STATUS (2026-07-21):** M2 is active, local-only, and unaccepted on `task/m2-control-plane-foundation` under an explicit owner GO. It does not authorize a Bridge, adapters, worker execution, orchestration, UI, remote access, deployment, or any M3+ work. Independent review and separate owner acceptance are required.
+> **M3 STATUS (2026-07-22):** M2 is accepted on `main` through `13993fc583507509437d2f6121c70eddd3198bfd`. M3 is active, local-only, and unaccepted on `task/m3-bridge-foundation` under an explicit owner GO. It authorizes only the outbound enrollment/connection, protected storage, journal, process-supervisor, and managed clone/worktree foundations. It does not authorize an inbound listener, remote access, worker adapters, orchestration, UI, deployment, production integration, or M4+. Independent read-only security/reliability review and separate owner acceptance are required.
 
-> **STATUS: POLICY REFERENCE — M1A-M1F CONTRACTS ACCEPTED; M1F PASSED COMPREHENSIVE INDEPENDENT REVIEW; RUNTIME NOT YET IMPLEMENTED. M2 AND LATER REMAIN UNAUTHORIZED PENDING A SEPARATE EXPLICIT OWNER GO.**
+> **STATUS: POLICY REFERENCE — M1A-M2 ACCEPTED; M3 LOCAL BRIDGE FOUNDATION ACTIVE, LOCAL-ONLY, AND UNACCEPTED; M4+ UNAUTHORIZED.**
 
 The command center is planned around least privilege, visible intent, task isolation, and owner-controlled escalation.
 

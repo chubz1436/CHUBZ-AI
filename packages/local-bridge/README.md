@@ -1,7 +1,10 @@
 # Local Bridge
 
-> **STATUS: PLANNED — NOT YET IMPLEMENTED**
+> **M3 STATUS: ACTIVE, LOCAL-ONLY, AND UNACCEPTED**
 
-Placeholder for the future local PC bridge. It is planned to broker narrowly approved communication between the web control panel and local workers, tools, files, and runtime information while enforcing task isolation and read/write/deploy gates.
+This package contains the bounded M3 Local Bridge foundation: outbound-only
+connection enrollment, protected credential storage, an at-most-once operation
+journal, a testable process supervisor, and managed clone/worktree isolation.
 
-No CLI, service, API, tunnel, authentication, or network configuration exists.
+It does not contain an inbound listener, remote-access behavior, worker adapter,
+orchestration, deployment logic, production integration, or any M4+ feature.

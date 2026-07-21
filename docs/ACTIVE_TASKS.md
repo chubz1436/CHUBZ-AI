@@ -1,8 +1,8 @@
 # Active Tasks
 
-> **M2 STATUS (2026-07-21):** M2 Control Plane Foundation has explicit owner GO and is active, unaccepted, on `task/m2-control-plane-foundation`; Codex is the implementation worker. Its bounded scope is local-only Fastify, strict loopback configuration, SQLite WAL/migrations, local administrator sessions, CSRF/Origin protections, authenticated M1B WebSocket parsing with cursor/idempotency persistence, and health/readiness. It excludes Bridge, adapters, worker execution, orchestration, UI, remote access, deployment, and M3+. Independent review and separate owner acceptance remain required. M1F's deferred LOW `readOnlyPaths` overlap note remains carried forward for later write-scope enforcement.
+> **M3 STATUS (2026-07-22):** M2 Control Plane Foundation is accepted on `main` through `13993fc583507509437d2f6121c70eddd3198bfd`. M3 Local Bridge Foundation has explicit owner GO and is active, local-only, and unaccepted on `task/m3-bridge-foundation`; Codex is the implementation worker. Its bounded scope is outbound enrollment/connection, protected local credential storage, persistent at-most-once journaling, process supervision, and managed clone/worktree isolation. It excludes inbound listeners, remote access, worker adapters, orchestration, UI, deployment, production integration, and M4+.
 
-> **STATUS: M1A-M1F CONTRACTS ACCEPTED. M1F ADAPTER & COORDINATION CONTRACTS PASSED COMPREHENSIVE INDEPENDENT REVIEW; M2 AND LATER REMAIN NOT STARTED OR UNAUTHORIZED.**
+> **STATUS: M1A-M2 ACCEPTED; M3 LOCAL BRIDGE FOUNDATION ACTIVE, LOCAL-ONLY, AND UNACCEPTED.**
 
 ## Project lifecycle status
 
@@ -15,7 +15,8 @@
 7. **Completed and accepted** — M1D Redaction Library: owner/Bantay accepted after independent read-only review PASS. Accepted validation recorded 364 tests and successful typecheck. Redaction remains intentionally conservative and best-effort; future policy expansion may add unsupported secret patterns. Runtime context/capture integration remains deferred.
 8. **Completed and accepted** — M1E Capture and Projection Contracts passed final independent read-only review. Accepted validation recorded 376 tests and successful typecheck; the work remains pure shared-library contracts only.
 9. **Completed and accepted** — M1F Adapter & Coordination Contracts passed comprehensive independent Claude Sonnet 4.6 review PASS. Accepted validation recorded 395 passing tests and successful typecheck. It remains pure shared schemas, parsers, evaluators, canonicalization/hash helpers, and synthetic tests only; runtime behavior remains deferred.
-10. **Pending and unauthorized** — M2 onward; each requires separate Bantay review and owner approval.
+10. **Completed and accepted** — M2 Control Plane Foundation, accepted on `main` through `13993fc583507509437d2f6121c70eddd3198bfd`.
+11. **Active and unaccepted** — M3 Local Bridge Foundation on `task/m3-bridge-foundation`; independent read-only security/reliability review and separate owner acceptance remain required.
 
 Earlier project bootstrap and worker onboarding (Codex, BUNSO, Antigravity) are complete and precede item 1.
 
@@ -46,7 +47,7 @@ Deferred owner inputs (not blockers, per D-022): the Obsidian vault path (U-7) r
 
 M1A Core Contracts and M1B Protocol Contracts are completed and merged into `main`.
 
-**M1A through M1F are complete and accepted; M1F remains contracts and tests only.** M2 and all later milestones are not started and unauthorized and require a separate explicit owner GO.
+**M1A through M2 are complete and accepted.** M3 has explicit owner GO only for the bounded local-only Bridge foundation on `task/m3-bridge-foundation`; it remains unaccepted. M4 and later remain unauthorized.
 
 Nothing in this file authorizes runtime orchestration, worker connection, domain or tunnel configuration, server access, MikroTik access, deployment, restart, infrastructure changes, or production actions.
 

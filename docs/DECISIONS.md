@@ -1,8 +1,8 @@
 # Decisions
 
-**M2 GO (2026-07-21):** The owner authorized one bounded local-only Control Plane foundation batch on `task/m2-control-plane-foundation`, implemented by Codex. M2 covers strict loopback configuration, Fastify lifecycle, SQLite WAL/migrations, local-admin Argon2 sessions, CSRF/Origin/request protections, authenticated M1B WebSocket parsing with persisted cursor/idempotency handling, and health/readiness. It excludes Bridge, adapters, worker execution, orchestration, UI, remote access, deployment, and M3+. Independent review and separate owner acceptance remain required.
+**M3 GO (2026-07-22):** M2 Control Plane Foundation is accepted on `main` through `13993fc583507509437d2f6121c70eddd3198bfd`. The owner authorized one bounded local-only M3 Local Bridge Foundation batch on `task/m3-bridge-foundation`, implemented by Codex. M3 covers outbound-only enrollment/connection, protected local credential storage, persistent at-most-once operation journaling, process supervision, and managed clone/worktree isolation. It excludes inbound listeners, remote access, worker adapters, orchestration, UI, deployment, production integration, and M4+. Independent read-only security/reliability review and separate owner acceptance remain required.
 
-> **STATUS: DECISIONS D-001 … D-032 ACCEPTED BY OWNER — M1A-M1F ACCEPTED; M1F ADAPTER & COORDINATION CONTRACTS PASSED COMPREHENSIVE INDEPENDENT REVIEW; M2 AND LATER REMAIN NOT STARTED OR UNAUTHORIZED PENDING A SEPARATE EXPLICIT OWNER GO**
+> **STATUS: DECISIONS D-001 … D-032 ACCEPTED BY OWNER — M1A-M2 ACCEPTED; M3 LOCAL BRIDGE FOUNDATION ACTIVE, LOCAL-ONLY, AND UNACCEPTED; M4+ UNAUTHORIZED**
 
 This file is the decision log. An entry marked **ACCEPTED BY OWNER** records a decision Kenneth / CHUBZ has approved. Acceptance of a design decision does **not** by itself authorize implementation, deployment, infrastructure configuration, or production access; each implementation phase carries its own explicit owner GO.
 

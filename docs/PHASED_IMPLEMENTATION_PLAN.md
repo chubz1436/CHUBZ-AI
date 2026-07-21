@@ -1,8 +1,8 @@
 # Phased Implementation Plan
 
-> **M2 STATUS (2026-07-21):** M2 Control Plane Foundation has explicit owner GO and is active but unaccepted on `task/m2-control-plane-foundation`, with Codex as implementation worker. Its scope is restricted to local-only configuration, Fastify, SQLite WAL/migrations, local administrator authentication/sessions, browser protections, M1B WebSocket parsing/cursors/idempotency persistence, and health/readiness. It excludes Bridge, adapters, worker execution, orchestration, UI, remote access, deployment, and M3+. Independent review and separate owner acceptance are required.
+> **M3 STATUS (2026-07-22):** M2 Control Plane Foundation is accepted on `main` through `13993fc583507509437d2f6121c70eddd3198bfd`. M3 Local Bridge Foundation has explicit owner GO and is active but unaccepted on `task/m3-bridge-foundation`, with Codex as implementation worker. Its scope is restricted to outbound-only enrollment/connection, protected local credential storage, persistent at-most-once journaling, process supervision, and managed clone/worktree isolation. It excludes inbound listeners, remote access, worker adapters, orchestration, UI, deployment, production integration, and M4+. Independent read-only security/reliability review and separate owner acceptance are required.
 
-> **STATUS: ACCEPTED PLAN — M1A-M1F CONTRACTS COMPLETE AND ACCEPTED; M1F PASSED COMPREHENSIVE INDEPENDENT REVIEW; RUNTIME IMPLEMENTATION NOT STARTED**
+> **STATUS: ACCEPTED PLAN — M1A-M2 COMPLETE AND ACCEPTED; M3 LOCAL BRIDGE FOUNDATION ACTIVE, LOCAL-ONLY, AND UNACCEPTED**
 >
 > Author: Claude Code / BUNSO (Fable 5), per accepted decision D-005; implementation-worker assignment amended by D-019.
 > Date: 2026-07-10. Revised following Bantay's required revisions R1–R7.
