@@ -1,10 +1,16 @@
 # Active Tasks
 
-> **M6 STATUS (2026-07-22):** M1A-M5 are accepted on `main` at `3e926486f03223ee93591ca0822568217a26eb2b`. The owner authorized the bounded, local-only M6 web chat and Kanban milestone on `task/m6-web-chat-kanban-ui`. M6 remains unaccepted pending independent read-only review and owner acceptance. M7 and later remain unauthorized.
+> **M7 STATUS (2026-07-22):** M1A-M6 are accepted on `main` at `00904342a685d20eb1f7b9566e9634aa49e9287f`. The owner authorized the bounded M7 evidence-capture and immutable review-package milestone on `task/m7-capture-review-packages`. M7 remains unaccepted pending independent read-only review and owner acceptance. M8 and later remain unauthorized.
+
+> **STATUS: M1A-M6 ACCEPTED; M7 AUTHORITATIVE EVIDENCE AND REVIEW-PACKAGE CANDIDATE ACTIVE, LOCAL-ONLY, AND UNACCEPTED.**
+
+M7 establishes persistent idempotent capture requests in the Control Plane; independently observed managed-worktree Git, bounded diff, process, test/build/runtime, readiness, sandbox, cancellation, and terminal-state evidence at the outbound-only Local Bridge; canonical immutable hash-verifiable packages; restart reconciliation; protected status/verify/download APIs and events; and a read-only evidence panel in the accepted M6 UI. Worker claims and owner-attested manual evidence remain explicitly separate from system observation. See [M7_EVIDENCE_AND_REVIEW_PACKAGES.md](M7_EVIDENCE_AND_REVIEW_PACKAGES.md). Bridge Log/Obsidian projection, recovery controls, apply/integration, routing, deployment, and remote access remain M8+.
+
+> **M6 ACCEPTANCE (2026-07-22):** The bounded local-only web chat and Kanban milestone independently passed, was owner-accepted, merged, and pushed on `main` at `00904342a685d20eb1f7b9566e9634aa49e9287f`.
 
 > **M5 COMPLETION (2026-07-22):** The Codex CLI adapter and owner-attested manual relay independently passed, were owner-accepted, merged, and pushed on `main` at `3e926486f03223ee93591ca0822568217a26eb2b`.
 
-> **STATUS: M1A-M5 ACCEPTED; M6 WEB CHAT AND KANBAN CANDIDATE ACTIVE, LOCAL-ONLY, AND UNACCEPTED.**
+> **STATUS: M1A-M6 ACCEPTED; M7 EVIDENCE AND REVIEW-PACKAGE CANDIDATE ACTIVE, LOCAL-ONLY, AND UNACCEPTED.**
 
 ## Project lifecycle status
 
@@ -20,7 +26,9 @@
 10. **Completed and accepted** — M2 Control Plane Foundation, accepted on `main` through `13993fc583507509437d2f6121c70eddd3198bfd`.
 11. **Completed and accepted** — M3 Local Bridge Foundation independently passed, was owner-accepted, merged, and pushed on `main` at `4474b8a7d3f37c8c53319d88bfc22ad7e352109e`.
 12. **Completed and accepted** — M4 Orchestrator and Capability Grants independently passed, was owner-accepted, merged, and pushed on `main` at `2a6c678ca6b4cc107aacb3bd2f81910609c4ad8d`.
-13. **Active and unaccepted** — M5 Codex CLI Adapter and Manual Relay on `task/m5-codex-manual-relay`, starting exactly from `2a6c678ca6b4cc107aacb3bd2f81910609c4ad8d`; independent read-only adapter/security/reliability review and separate owner acceptance remain required.
+13. **Completed and accepted** — M5 Codex CLI Adapter and Manual Relay, accepted on `main` at `3e926486f03223ee93591ca0822568217a26eb2b`.
+14. **Completed and accepted** — M6 Web Chat and Kanban UI, accepted on `main` at `00904342a685d20eb1f7b9566e9634aa49e9287f`.
+15. **Active and unaccepted** — M7 authoritative evidence capture and immutable review packages on `task/m7-capture-review-packages`; independent read-only review and separate owner acceptance remain required.
 
 Earlier project bootstrap and worker onboarding (Codex, BUNSO, Antigravity) are complete and precede item 1.
 
@@ -51,9 +59,9 @@ Deferred owner inputs (not blockers, per D-022): the Obsidian vault path (U-7) r
 
 M1A Core Contracts and M1B Protocol Contracts are completed and merged into `main`.
 
-**M1A through M4 are complete and accepted.** M5 has explicit owner GO only for the bounded local-only Codex CLI adapter and owner-attested manual-relay implementation on `task/m5-codex-manual-relay`; it remains unaccepted. Codex CLI is the first automated connector and manual relay remains the universal owner-attested fallback. M6 and later remain unauthorized.
+**M1A through M6 are complete and accepted.** M7 has explicit owner GO only for the bounded local-only evidence-capture and review-package candidate on `task/m7-capture-review-packages`; it remains unaccepted. Codex CLI is the first automated connector and manual relay remains the universal owner-attested fallback. M8 and later remain unauthorized.
 
-Nothing in this file authorizes owner-project integration, domain or tunnel configuration, server access, MikroTik access, deployment, restart, infrastructure change, production action, or M6+ work.
+Nothing in this file authorizes owner-project integration, domain or tunnel configuration, server access, MikroTik access, deployment, infrastructure change, production action, or M8+ work.
 
 ## M1D acceptance record
 

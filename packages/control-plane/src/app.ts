@@ -15,9 +15,10 @@ import type { ControlPlaneConfig } from "./config.js";
 import { ControlPlaneDatabase } from "./database.js";
 import { Phase1GrantKey } from "./grant-engine.js";
 import { M6UiService, mapM6Error } from "./m6-ui.js";
+import { M7ReviewService } from "./m7-review.js";
 import { M4Orchestrator } from "./orchestrator.js";
 
-export type ControlPlane = Readonly<{ app: FastifyInstance; database: ControlPlaneDatabase; auth: AuthService; close: () => Promise<void>; emitEvent: (streamId: string, message: ControlPlaneToClientMessage) => void }>;
+export type ControlPlane = Readonly<{ app: FastifyInstance; database: ControlPlaneDatabase; auth: AuthService; review: M7ReviewService; close: () => Promise<void>; emitEvent: (streamId: string, message: ControlPlaneToClientMessage) => void }>;
 const json = "application/json";
 const messageId = () => randomUUID();
 const now = () => new Date().toISOString();
@@ -41,7 +42,8 @@ export function createControlPlane(config: ControlPlaneConfig): ControlPlane {
   const auth = new AuthServiceClass(database, config);
   const grantSecret = createHash("sha256").update(`chubz.m6.runtime-grant/v1\n${config.sessionSecret}`, "utf8").digest();
   const orchestrator = new M4Orchestrator(database, new Phase1GrantKey("control-plane-runtime", grantSecret));
-  const ui = new M6UiService(database, orchestrator);
+  const review = new M7ReviewService(database, config);
+  const ui = new M6UiService(database, orchestrator, (principal, taskId) => review.snapshotForTask(principal, taskId));
   const loginBuckets = new Map<string, LoginBucket>();
   const loginBucketExpiries: LoginBucketExpiry[] = [];
   let loginBucketGeneration = 0;
@@ -109,6 +111,7 @@ export function createControlPlane(config: ControlPlaneConfig): ControlPlane {
     const message: ControlPlaneToClientMessage = { protocolVersion: "1.0", messageId: messageId(), messageKind: "task.event", sentAt: at, taskId, payload: { streamId, sequence, eventId, taskId, occurredAt: at, eventKind } };
     emitEvent(streamId, message);
   };
+  review.setTransitionPublisher(publishTaskEvent);
   app.get("/v1/ui/snapshot", async (request, reply) => {
     const principal = principalFor(request); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request));
     return { ...ui.snapshot(principal), csrfToken: principal.csrfToken };
@@ -136,6 +139,30 @@ export function createControlPlane(config: ControlPlaneConfig): ControlPlane {
   app.post<{ Params: { taskId: string }; Body: Record<string, unknown> }>("/v1/ui/tasks/:taskId/manual-artifacts", async (request, reply) => {
     const principal = principalFor(request); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request));
     try { return ui.artifactUnavailable(request.body); } catch (error) { return m6Failure(error, request, reply); }
+  });
+  app.post<{ Params: { taskId: string }; Body: Record<string, unknown> }>("/v1/ui/tasks/:taskId/captures", async (request, reply) => {
+    const principal = principalFor(request); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request));
+    try { const result = review.requestCapture(principal, request.params.taskId, request.body); return reply.code(202).send(result); } catch (error) { return m6Failure(error, request, reply); }
+  });
+  app.get<{ Params: { taskId: string } }>("/v1/ui/tasks/:taskId/captures", async (request, reply) => {
+    const principal = principalFor(request); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request));
+    try { return { captures: review.snapshotForTask(principal, request.params.taskId) }; } catch (error) { return m6Failure(error, request, reply); }
+  });
+  app.post<{ Params: { taskId: string; captureId: string }; Body: Record<string, unknown> }>("/v1/ui/tasks/:taskId/captures/:captureId/retry", async (request, reply) => {
+    const principal = principalFor(request); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request));
+    try { const result = review.retryCapture(principal, request.params.taskId, request.params.captureId, request.body); return reply.code(202).send(result); } catch (error) { return m6Failure(error, request, reply); }
+  });
+  app.get<{ Params: { taskId: string } }>("/v1/ui/tasks/:taskId/review-packages", async (request, reply) => {
+    const principal = principalFor(request); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request));
+    try { return { packages: review.listPackages(principal, request.params.taskId) }; } catch (error) { return m6Failure(error, request, reply); }
+  });
+  app.post<{ Params: { taskId: string; packageId: string }; Body: Record<string, unknown> }>("/v1/ui/tasks/:taskId/review-packages/:packageId/verify", async (request, reply) => {
+    const principal = principalFor(request); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request));
+    try { return review.verifyPackage(principal, request.params.taskId, request.params.packageId); } catch (error) { return m6Failure(error, request, reply); }
+  });
+  app.get<{ Params: { packageId: string } }>("/v1/review-packages/:packageId", async (request, reply) => {
+    const principal = principalFor(request); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request));
+    try { const result = review.download(principal, request.params.packageId); return reply.header("Content-Type", "application/json; charset=utf-8").header("Content-Disposition", `attachment; filename="${result.fileName}"`).header("Digest", result.digest).send(result.content); } catch (error) { return m6Failure(error, request, reply); }
   });
   app.post<{ Body: Record<string, unknown> }>("/v1/ui/adapters/codex/refresh", async (request, reply) => {
     const principal = principalFor(request); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request));
@@ -198,5 +225,5 @@ export function createControlPlane(config: ControlPlaneConfig): ControlPlane {
     const serialized = JSON.stringify(message);
     for (const socket of browserSockets) if (socket.readyState === socket.OPEN && socket.bufferedAmount < config.websocketMessageLimit * 4) socket.send(serialized, () => undefined);
   };
-  return Object.freeze({ app, database, auth, emitEvent, close: async () => { await app.close(); database.close(); } });
+  return Object.freeze({ app, database, auth, review, emitEvent, close: async () => { await app.close(); database.close(); } });
 }

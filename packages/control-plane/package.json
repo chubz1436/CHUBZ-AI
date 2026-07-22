@@ -9,7 +9,7 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "build": "tsc --noEmit",
-    "lint": "eslint src/app.ts src/auth.ts src/database.ts src/m6-ui.ts src/orchestrator.ts test/m6-ui.test.ts --max-warnings=0",
+    "lint": "eslint src/app.ts src/auth.ts src/database.ts src/m6-ui.ts src/m7-review.ts src/orchestrator.ts test/m6-ui.test.ts test/m7-review.test.ts --max-warnings=0",
     "start": "tsx src/index.ts"
   },
   "dependencies": {

@@ -30,4 +30,4 @@ export async function loadSnapshot(): Promise<Snapshot> {
 export const login = (username: string, password: string): Promise<{ csrfToken: string }> => request("/v1/auth/login", { method: "POST", body: JSON.stringify({ username, password }) });
 export const logout = (): Promise<null> => request("/v1/auth/logout", { method: "POST", body: "{}" });
 export const createTask = (body: Record<string, unknown>): Promise<Record<string, unknown>> => request("/v1/ui/tasks", { method: "POST", body: JSON.stringify(body) });
-export const mutateTask = (taskId: string, action: "approve-dispatch" | "cancel" | "decision" | "manual-text" | "manual-artifacts", body: Record<string, unknown>): Promise<Record<string, unknown>> => request(`/v1/ui/tasks/${encodeURIComponent(taskId)}/${action}`, { method: "POST", body: JSON.stringify(body) });
+export const mutateTask = (taskId: string, action: "approve-dispatch" | "cancel" | "decision" | "manual-text" | "manual-artifacts" | "captures", body: Record<string, unknown>): Promise<Record<string, unknown>> => request(`/v1/ui/tasks/${encodeURIComponent(taskId)}/${action}`, { method: "POST", body: JSON.stringify(body) });

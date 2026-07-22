@@ -10,8 +10,9 @@ import {
   type GrantAuthenticationVerifier,
 } from "@chubz/shared";
 import type { CodexDispatchCommand } from "@chubz/control-plane";
-import { CodexCliAdapter, isBoundedFallbackEvidence, type CodexAdapterOutcome } from "./codex-adapter.js";
+import { buildCodexInvocationArgs, CodexCliAdapter, isBoundedFallbackEvidence, type CodexAdapterOutcome } from "./codex-adapter.js";
 import type { CodexProbeEvidence, WindowsSandboxImplementation } from "./adapter-registry.js";
+import { EvidenceCaptureService, type ReviewCaptureRequest } from "./evidence-capture.js";
 import { OperationJournal } from "./journal.js";
 
 const WORKER_ID = "codex-cli" as const;
@@ -41,6 +42,13 @@ export type CodexExecutionContext = Readonly<{
   outputSchemaPath: string;
   provenance: CodexProbeEvidence;
   windowsSandboxImplementation: WindowsSandboxImplementation;
+  reviewCapture?: Readonly<{
+    service: EvidenceCaptureService;
+    captureId: string;
+    managedClonePath: string;
+    managedCloneRoot: string;
+    packageRoot: string;
+  }>;
 }>;
 export type CodexBridgeResult = Readonly<{
   operationId: string;
@@ -51,6 +59,7 @@ export type CodexBridgeResult = Readonly<{
   journalRef: string;
   resultRef: string;
   adapterOutcome: CodexAdapterOutcome | null;
+  reviewPackage: Readonly<{ captureId: string; packageId: string | null; status: "captured" | "incomplete" | "quarantined" | "failed"; packageDigest: string | null; manifestDigest: string | null }> | null;
 }>;
 export type CodexBridgeOptions = Readonly<{ signal?: AbortSignal; onStarted?: () => Promise<void> | void; failpoint?: "after-journal-before-start" | "after-start-before-execution" }>;
 
@@ -118,7 +127,7 @@ export class CodexBridge {
     const started = this.journal.startGrantedOperation(command.operationId);
     if (options.failpoint === "after-start-before-execution") throw new Error("injected failure after start");
     try { await options.onStarted?.(); } catch {
-      const result = this.result(command, "failed", "", false, "CONTROL_PLANE_DISCONNECTED", started.journalEntryId, null);
+      const result = this.result(command, "failed", "", false, "CONTROL_PLANE_DISCONNECTED", started.journalEntryId, null, null);
       this.journal.failGrantedOperation(command.operationId, command.grant.grantId, result.resultRef, { ...result, adapterOutcome: undefined }, "CONTROL_PLANE_DISCONNECTED");
       return result;
     }
@@ -129,7 +138,27 @@ export class CodexBridge {
       writeScope: command.writeScope, readiness: command.readiness, provenance: context.provenance, timeoutMs: command.action.constraints.timeoutSec * 1_000, terminationDeadlineMs: 10_000, signal: options.signal,
     });
     const output = outcome.parsedResult === null ? "" : sanitize(outcome.parsedResult.summary);
-    const result = this.result(command, outcome.state, output, outcome.process.stdoutTruncated || outcome.process.stderrTruncated, outcome.failureCode, started.journalEntryId, outcome);
+    let reviewPackage: CodexBridgeResult["reviewPackage"] = null;
+    if (context.reviewCapture !== undefined) {
+      const captureAt = outcome.run.endedAt ?? outcome.run.startedAt ?? new Date().toISOString();
+      const invocation = buildCodexInvocationArgs({ mode: command.writeScope.permissions.create || command.writeScope.permissions.modify || command.writeScope.permissions.delete ? "workspace-write" : "read-only", windowsSandboxImplementation: context.windowsSandboxImplementation, outputSchemaPath: context.outputSchemaPath, worktreePath: context.worktreePath });
+      const captureRequest: ReviewCaptureRequest = {
+        captureId: context.reviewCapture.captureId, ownerId: command.ownerId, projectId: command.projectId, taskId: command.taskId, attemptId: command.attemptId, operationId: command.operationId,
+        journalId: started.journalEntryId, workerId: command.workerId, adapterId: command.adapterId, adapterRunId: outcome.run.adapterRunId,
+        managedClonePath: context.reviewCapture.managedClonePath, managedCloneRoot: context.reviewCapture.managedCloneRoot, worktreePath: context.worktreePath, managedWorktreeRoot: context.managedWorktreeRoot,
+        packageRoot: context.reviewCapture.packageRoot, managedDataRoot: context.managedDataRoot, baselineCommit: outcome.git.baseline.head, expectedFinalHead: outcome.git.after.head,
+        workerClaim: output || null, readiness: command.readiness as unknown as Readonly<Record<string, unknown>>, sandbox: { implementation: context.windowsSandboxImplementation, assurance: context.provenance.windowsSandbox.assurance },
+        terminalState: outcome.state, executionUnknown: outcome.state === "execution-unknown", applied: false,
+        validations: [{ validationId: `validation-${context.reviewCapture.captureId}`, kind: "unknown", command: [context.executablePath, ...invocation], cwdLabel: `managed://${command.projectId}/${command.attemptId}`, startedAt: outcome.run.startedAt ?? captureAt, finishedAt: captureAt, process: outcome.process, toolVersions: { codex: context.provenance.version ?? "unknown" } }], capturedAt: captureAt,
+      };
+      try {
+        const captured = await context.reviewCapture.service.capture(captureRequest);
+        reviewPackage = { captureId: captured.captureId, packageId: captured.packageId, status: captured.status, packageDigest: captured.packageDigest, manifestDigest: captured.manifestDigest };
+      } catch {
+        reviewPackage = { captureId: context.reviewCapture.captureId, packageId: null, status: "failed", packageDigest: null, manifestDigest: null };
+      }
+    }
+    const result = this.result(command, outcome.state, output, outcome.process.stdoutTruncated || outcome.process.stderrTruncated, outcome.failureCode, started.journalEntryId, outcome, reviewPackage);
     const durable = { ...result, adapterOutcome: undefined };
     if (outcome.state === "completed") this.journal.completeGrantedOperation(command.operationId, command.grant.grantId, result.resultRef, durable);
     else if (outcome.state === "execution-unknown") this.journal.markGrantedOperationUnknown(command.operationId, command.grant.grantId, result.resultRef, durable);
@@ -137,15 +166,15 @@ export class CodexBridge {
     return result;
   }
 
-  private result(command: CodexDispatchCommand, state: CodexBridgeResult["state"], output: string, outputTruncated: boolean, failureCode: string | null, journalRef: string, adapterOutcome: CodexAdapterOutcome | null): CodexBridgeResult {
-    return Object.freeze({ operationId: command.operationId, state, output, outputTruncated, failureCode, journalRef, resultRef: `result-${createHash("sha256").update(command.operationId).digest("hex").slice(0, 48)}`, adapterOutcome });
+  private result(command: CodexDispatchCommand, state: CodexBridgeResult["state"], output: string, outputTruncated: boolean, failureCode: string | null, journalRef: string, adapterOutcome: CodexAdapterOutcome | null, reviewPackage: CodexBridgeResult["reviewPackage"]): CodexBridgeResult {
+    return Object.freeze({ operationId: command.operationId, state, output, outputTruncated, failureCode, journalRef, resultRef: `result-${createHash("sha256").update(command.operationId).digest("hex").slice(0, 48)}`, adapterOutcome, reviewPackage });
   }
-  private unknown(command: CodexDispatchCommand, journalRef: string): CodexBridgeResult { return this.result(command, "execution-unknown", "", false, "EXECUTION_UNKNOWN", journalRef, null); }
+  private unknown(command: CodexDispatchCommand, journalRef: string): CodexBridgeResult { return this.result(command, "execution-unknown", "", false, "EXECUTION_UNKNOWN", journalRef, null, null); }
 
   public reconcileAfterRestart(): readonly CodexBridgeResult[] {
     this.assertOpen();
     return this.journal.reconcileAfterRestart(() => ({ outcome: "unknown" })).map((record) => record.state === "failed"
-      ? Object.freeze({ operationId: record.operationId, state: "failed" as const, output: "", outputTruncated: false, failureCode: "RESTART_BEFORE_EXECUTION", journalRef: record.journalEntryId, resultRef: `result-${createHash("sha256").update(record.operationId).digest("hex").slice(0, 48)}`, adapterOutcome: null })
-      : Object.freeze({ operationId: record.operationId, state: "execution-unknown" as const, output: "", outputTruncated: false, failureCode: "EXECUTION_UNKNOWN", journalRef: record.journalEntryId, resultRef: `result-${createHash("sha256").update(record.operationId).digest("hex").slice(0, 48)}`, adapterOutcome: null }));
+      ? Object.freeze({ operationId: record.operationId, state: "failed" as const, output: "", outputTruncated: false, failureCode: "RESTART_BEFORE_EXECUTION", journalRef: record.journalEntryId, resultRef: `result-${createHash("sha256").update(record.operationId).digest("hex").slice(0, 48)}`, adapterOutcome: null, reviewPackage: null })
+      : Object.freeze({ operationId: record.operationId, state: "execution-unknown" as const, output: "", outputTruncated: false, failureCode: "EXECUTION_UNKNOWN", journalRef: record.journalEntryId, resultRef: `result-${createHash("sha256").update(record.operationId).digest("hex").slice(0, 48)}`, adapterOutcome: null, reviewPackage: null }));
   }
 }

@@ -1,10 +1,12 @@
 # Phased Implementation Plan
 
-> **M6 STATUS (2026-07-22):** M1A-M5 are accepted on `main` at `3e926486f03223ee93591ca0822568217a26eb2b`. The owner granted bounded local-only M6 GO for the web chat, authoritative Kanban/task detail, owner actions, readiness/manual-relay presentation, and reconnectable live updates. M7 and later remain separately gated.
+> **M7 STATUS (2026-07-22):** M1A-M6 are accepted on `main` at `00904342a685d20eb1f7b9566e9634aa49e9287f`. M7 has explicit owner GO for authoritative evidence capture, bounded sanitized Git/diff/validation observation, immutable hash-verifiable review packages, restart/idempotency behavior, protected APIs/events, and read-only M6 UI integration. The candidate on `task/m7-capture-review-packages` is not accepted until independent read-only review and owner acceptance. M8 and later remain separately gated.
+
+> **M6 ACCEPTANCE (2026-07-22):** The bounded local-only web chat and Kanban milestone independently passed, was owner-accepted, merged, and pushed on `main` at `00904342a685d20eb1f7b9566e9634aa49e9287f`.
 
 > **M5 COMPLETION (2026-07-22):** The Codex CLI adapter and owner-attested manual relay independently passed, were owner-accepted, merged, and pushed on `main` at `3e926486f03223ee93591ca0822568217a26eb2b`.
 
-> **STATUS: ACCEPTED PLAN — M1A-M5 COMPLETE AND ACCEPTED; M6 WEB CHAT AND KANBAN CANDIDATE ACTIVE, LOCAL-ONLY, AND UNACCEPTED**
+> **STATUS: ACCEPTED PLAN — M1A-M6 COMPLETE AND ACCEPTED; M7 EVIDENCE AND REVIEW-PACKAGE CANDIDATE ACTIVE, LOCAL-ONLY, AND UNACCEPTED**
 >
 > Author: Claude Code / BUNSO (Fable 5), per accepted decision D-005; implementation-worker assignment amended by D-019.
 > Date: 2026-07-10. Revised following Bantay's required revisions R1–R7.

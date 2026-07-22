@@ -6,8 +6,8 @@ export type Task = {
   attempts: Array<{ attemptId: string; sequence: number; actionDigest: string; instructions: string; createdAt: string; operation: string | null; operationId: string | null; workerId: string | null; timeoutSec: number | null; requiresCleanWorktree: boolean | null }>;
   assignments: Array<Record<string, unknown>>; approval: Record<string, unknown> | null; grant: Record<string, unknown> | null; lease: Record<string, unknown> | null;
   scopes: Array<Record<string, unknown>>; queue: Record<string, unknown> | null; results: Array<Record<string, unknown>>; manualResults: Array<Record<string, unknown>>;
-  structuredResult: Record<string, unknown> | null; transitions: Array<Record<string, unknown>>; events: Array<Record<string, unknown>>;
-  actions: { canApproveDispatch: boolean; canCancel: boolean; canDecideResult: boolean; canSubmitManualText: boolean; canRetry: false };
+  structuredResult: Record<string, unknown> | null; transitions: Array<Record<string, unknown>>; events: Array<Record<string, unknown>>; captures: Array<Record<string, unknown>>;
+  actions: { canApproveDispatch: boolean; canCancel: boolean; canDecideResult: boolean; canSubmitManualText: boolean; canRequestCapture: boolean; canRetry: false };
 };
 
 export type Adapter = {

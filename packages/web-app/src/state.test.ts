@@ -4,7 +4,7 @@ import type { Task } from "./types.js";
 
 const task = (overrides: Partial<Task> = {}): Task => ({
   taskId: "task-one", projectId: "project-one", state: "DRAFT", version: 0, attemptId: "attempt-one", operationId: "operation-one", createdAt: "2026-07-22T00:00:00.000Z", updatedAt: "2026-07-22T00:00:00.000Z", cancellationRequestedAt: null, blockedContext: null, executionUnknown: false,
-  attempts: [], assignments: [], approval: null, grant: null, lease: null, scopes: [], queue: null, results: [], manualResults: [], structuredResult: null, transitions: [], events: [], actions: { canApproveDispatch: false, canCancel: true, canDecideResult: false, canSubmitManualText: false, canRetry: false }, ...overrides,
+  attempts: [], assignments: [], approval: null, grant: null, lease: null, scopes: [], queue: null, results: [], manualResults: [], structuredResult: null, transitions: [], events: [], captures: [], actions: { canApproveDispatch: false, canCancel: true, canDecideResult: false, canSubmitManualText: false, canRequestCapture: false, canRetry: false }, ...overrides,
 });
 
 describe("authoritative board projection", () => {

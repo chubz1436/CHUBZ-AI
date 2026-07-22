@@ -1,6 +1,14 @@
 # Architecture
 
-> **STATUS: ARCHITECTURE REFERENCE — M1A/M1B CONTRACTS MERGED; RUNTIME NOT YET IMPLEMENTED**
+> **M7 STATUS:** M1A-M6 are accepted; the M7 runtime evidence and review-package candidate is active and unaccepted.
+
+## M7 authority split
+
+The Control Plane persists capture identity, eligibility, lifecycle, failure/limitation metadata, package bindings, idempotency, restart reconciliation, ownership checks, and browser/WebSocket projections. The outbound-only Local Bridge observes Git and supervised process state only inside managed clones and exact per-attempt worktrees, constructs bounded sanitized canonical packages beneath managed-data roots, and never uses or mutates owner working copies. Finalized packages are immutable and independently hash-verifiable. Worker claims, system observations, owner-attested manual evidence, and reviewer conclusions remain separate categories. See [M7_EVIDENCE_AND_REVIEW_PACKAGES.md](M7_EVIDENCE_AND_REVIEW_PACKAGES.md).
+
+M7 does not add Bridge Log/Obsidian projection, recovery-console controls, project apply/integration, routing, deployment, or remote access; these remain later gated milestones.
+
+> **STATUS: ARCHITECTURE REFERENCE — M1A-M6 ACCEPTED; M7 RUNTIME EVIDENCE CANDIDATE ACTIVE AND UNACCEPTED**
 
 ## Planned components
 

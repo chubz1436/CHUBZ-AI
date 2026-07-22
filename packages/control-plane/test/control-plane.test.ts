@@ -27,10 +27,10 @@ describe("database foundation", () => {
     const root = mkdtempSync(join(tmpdir(), "chubz-control-plane-test-")); roots.push(root); const config = createTestConfig(root); const first = createControlPlane(config); const db = first.database.connection;
     expect((db.pragma("journal_mode", { simple: true }) as string).toLowerCase()).toBe("wal");
     expect(db.pragma("foreign_keys", { simple: true })).toBe(1);
-    expect((db.prepare("SELECT count(*) AS n FROM schema_migrations").get() as { n: number }).n).toBe(6);
+    expect((db.prepare("SELECT count(*) AS n FROM schema_migrations").get() as { n: number }).n).toBe(7);
     await first.close();
     const second = createControlPlane(config);
-    expect((second.database.connection.prepare("SELECT count(*) AS n FROM schema_migrations").get() as { n: number }).n).toBe(6);
+    expect((second.database.connection.prepare("SELECT count(*) AS n FROM schema_migrations").get() as { n: number }).n).toBe(7);
     await second.close();
   });
 });
@@ -75,10 +75,15 @@ describe("migration hardening", () => {
     const db = database.connection;
     db.exec(`
       DROP TRIGGER administrators_singleton_insert;
+      DROP TRIGGER m7_review_packages_immutable_update;
+      DROP TRIGGER m7_review_packages_immutable_delete;
       DROP TRIGGER m6_manual_results_immutable_update;
       DROP TRIGGER m6_manual_results_immutable_delete;
       DROP TRIGGER task_attempts_immutable_update;
       DROP TRIGGER task_attempts_immutable_delete;
+      DROP TABLE m7_review_packages;
+      DROP TABLE m7_capture_requests;
+      DROP TABLE m7_mutations;
       DROP TABLE m6_manual_results;
       DROP TABLE m6_mutations;
       DROP TABLE m5_worker_states;
@@ -99,7 +104,7 @@ describe("migration hardening", () => {
       ALTER TABLE tasks DROP COLUMN current_operation_id;
       ALTER TABLE tasks DROP COLUMN created_at;
       ALTER TABLE tasks DROP COLUMN version;
-      DELETE FROM schema_migrations WHERE version IN (2, 3, 4, 5, 6);
+      DELETE FROM schema_migrations WHERE version IN (2, 3, 4, 5, 6, 7);
     `);
   };
   it("upgrades zero and one administrator databases but fails closed for multiple administrators", () => {

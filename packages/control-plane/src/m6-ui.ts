@@ -72,7 +72,7 @@ type TaskRow = {
 type AttemptRow = { attempt_id: string; attempt_sequence: number; action_json: string; action_digest: string; input_text: string; created_at: string };
 
 export class M6UiService {
-  public constructor(private readonly database: ControlPlaneDatabase, private readonly orchestrator: M4Orchestrator) {}
+  public constructor(private readonly database: ControlPlaneDatabase, private readonly orchestrator: M4Orchestrator, private readonly captureProjector?: (principal: Principal, taskId: string) => readonly Record<string, unknown>[]) {}
 
   private mutation<T>(scope: string, idempotencyKey: string, request: unknown, execute: () => T): T {
     const requestDigest = sha256(canonical(request));
@@ -102,7 +102,7 @@ export class M6UiService {
     return task;
   }
 
-  private snapshotTask(task: TaskRow): Record<string, unknown> {
+  private snapshotTask(task: TaskRow, principal: Principal): Record<string, unknown> {
     const db = this.database.connection;
     const attempts = db.prepare("SELECT attempt_id,attempt_sequence,action_json,action_digest,input_text,created_at FROM task_attempts WHERE task_id=? ORDER BY attempt_sequence").all(task.task_id) as AttemptRow[];
     const assignments = db.prepare("SELECT assignment_id,attempt_id,operation_id,worker_id,status,assignment_json,created_at,updated_at FROM m4_assignments WHERE task_id=? ORDER BY created_at").all(task.task_id) as Array<Record<string, unknown> & { assignment_json: string }>;
@@ -147,11 +147,13 @@ export class M6UiService {
       structuredResult: browserSafe(latestManualResult ? json<unknown>(latestManualResult.result_json) : latestResult ? json<unknown>(latestResult.result_json) : null),
       transitions: transitions.map(({ evidence_json, blocked_context_json, ...transition }) => ({ ...transition, evidence: browserSafe(json<unknown[]>(evidence_json) ?? []), blockedContext: browserSafe(json<Record<string, unknown>>(blocked_context_json)) })),
       events: events.reverse().map((event) => ({ sequence: event.sequence, eventId: event.event_id, occurredAt: event.occurred_at, payload: browserSafe(json<unknown>(event.payload_json)) })),
+      captures: this.captureProjector?.(principal, task.task_id) ?? [],
       actions: {
         canApproveDispatch: task.state === "AWAITING_DISPATCH" && latestAssignment?.["status"] === "pending-approval",
         canCancel: ["DRAFT", "CONTEXT_PREPARING", "AWAITING_DISPATCH", "RUNNING", "RESULT_CAPTURED", "AWAITING_APPROVAL", "APPROVED", "REVISION_REQUESTED"].includes(task.state),
         canDecideResult: task.state === "AWAITING_APPROVAL",
         canSubmitManualText: task.state === "RUNNING" && latestAssignment?.["worker_id"] === "manual-relay" && latestAssignment?.["status"] === "manual-active",
+        canRequestCapture: ["RESULT_CAPTURED", "AWAITING_APPROVAL", "APPROVED", "REJECTED", "FAILED", "CANCELLED", "BLOCKED", "COMPLETED"].includes(task.state) && (latestResult !== undefined || latestManualResult !== undefined),
         canRetry: false,
       },
     };
@@ -186,7 +188,7 @@ export class M6UiService {
       controlPlane: { health: "ok", readiness: this.database.isReady() ? "ready" : "unavailable", localOnly: true },
       bridge: { availability: "unavailable", connected: false, lastSeenAt: null, reason: "No authoritative Bridge heartbeat is connected to this M6 surface." },
       cursor: { streamId: "ui-tasks", lastConsumedSequence: cursor?.head_sequence ?? 0, oldestRetainedSequence: cursor?.oldest_retained_sequence ?? 1 },
-      tasks: tasks.map((task) => this.snapshotTask(task)), adapters,
+      tasks: tasks.map((task) => this.snapshotTask(task, principal)), adapters,
       workers: [...workerStates, { worker_id: "manual-relay", state: "manual-only", updated_at: null, adapter_id: "manual-relay", connector_tier: "manual-relay" }],
       manualRelay: { available: true, provenance: "owner-attested manual relay", assurance: "weaker-manual", automatedExecution: false, artifactTransportAvailable: false, allowedArtifactTypes: ALLOWED_MANUAL_ARTIFACT_TYPES, appliedToProject: false, appliedToWorktree: false },
     };

@@ -210,6 +210,65 @@ const migrations: readonly Migration[] = [
     CREATE TRIGGER m6_manual_results_immutable_delete
       BEFORE DELETE ON m6_manual_results BEGIN SELECT RAISE(ABORT, 'manual result is immutable'); END;
   ` },
+  { version: 7, sql: `
+    CREATE TABLE m7_capture_requests (
+      capture_id TEXT PRIMARY KEY,
+      identity_digest TEXT NOT NULL UNIQUE,
+      owner_id TEXT NOT NULL,
+      project_id TEXT NOT NULL,
+      task_id TEXT NOT NULL REFERENCES tasks(task_id),
+      attempt_id TEXT NOT NULL REFERENCES task_attempts(attempt_id),
+      operation_id TEXT NOT NULL,
+      worker_id TEXT NOT NULL,
+      adapter_id TEXT NOT NULL,
+      journal_id TEXT,
+      baseline_commit TEXT,
+      final_commit TEXT,
+      status TEXT NOT NULL CHECK(status IN ('pending','capturing','captured','failed','incomplete','quarantined')),
+      failure_reason TEXT,
+      limitations_json TEXT NOT NULL DEFAULT '[]',
+      evidence_summary_json TEXT,
+      retry_of_capture_id TEXT REFERENCES m7_capture_requests(capture_id),
+      requested_at TEXT NOT NULL,
+      started_at TEXT,
+      finished_at TEXT,
+      updated_at TEXT NOT NULL,
+      UNIQUE(task_id, attempt_id, operation_id, identity_digest)
+    );
+    CREATE INDEX m7_capture_task_idx ON m7_capture_requests(owner_id, task_id, attempt_id, requested_at);
+    CREATE INDEX m7_capture_pending_idx ON m7_capture_requests(status, requested_at);
+
+    CREATE TABLE m7_review_packages (
+      package_id TEXT PRIMARY KEY,
+      capture_id TEXT NOT NULL UNIQUE REFERENCES m7_capture_requests(capture_id),
+      owner_id TEXT NOT NULL,
+      project_id TEXT NOT NULL,
+      task_id TEXT NOT NULL REFERENCES tasks(task_id),
+      attempt_id TEXT NOT NULL REFERENCES task_attempts(attempt_id),
+      status TEXT NOT NULL CHECK(status IN ('captured','incomplete','quarantined')),
+      schema_version TEXT NOT NULL,
+      package_digest TEXT NOT NULL UNIQUE,
+      manifest_digest TEXT NOT NULL UNIQUE,
+      package_file_name TEXT NOT NULL,
+      byte_length INTEGER NOT NULL CHECK(byte_length >= 0),
+      package_json TEXT NOT NULL,
+      manifest_json TEXT NOT NULL,
+      finalized_at TEXT NOT NULL
+    );
+    CREATE TRIGGER m7_review_packages_immutable_update
+      BEFORE UPDATE ON m7_review_packages BEGIN SELECT RAISE(ABORT, 'review package is immutable'); END;
+    CREATE TRIGGER m7_review_packages_immutable_delete
+      BEFORE DELETE ON m7_review_packages BEGIN SELECT RAISE(ABORT, 'review package is immutable'); END;
+
+    CREATE TABLE m7_mutations (
+      mutation_scope TEXT NOT NULL,
+      idempotency_key TEXT NOT NULL,
+      request_digest TEXT NOT NULL,
+      result_json TEXT,
+      recorded_at TEXT NOT NULL,
+      PRIMARY KEY(mutation_scope, idempotency_key)
+    );
+  ` },
 ];
 const checksum = (sql: string): string => createHash("sha256").update(sql).digest("hex");
 export class MigrationError extends Error { constructor() { super("Control Plane database migration failed."); this.name = "MigrationError"; } }
