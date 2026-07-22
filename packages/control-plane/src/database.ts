@@ -28,6 +28,144 @@ const migrations: readonly Migration[] = [
   { version: 3, sql: `
     CREATE INDEX IF NOT EXISTS auth_events_occurred_at_idx ON auth_events(occurred_at, id);
   ` },
+  { version: 4, sql: `
+    ALTER TABLE tasks ADD COLUMN version INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE tasks ADD COLUMN created_at TEXT;
+    ALTER TABLE tasks ADD COLUMN current_operation_id TEXT;
+    ALTER TABLE tasks ADD COLUMN cancellation_requested_at TEXT;
+
+    CREATE TABLE task_attempts (
+      attempt_id TEXT PRIMARY KEY,
+      task_id TEXT NOT NULL REFERENCES tasks(task_id),
+      attempt_sequence INTEGER NOT NULL,
+      action_json TEXT NOT NULL,
+      action_digest TEXT NOT NULL,
+      input_text TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      UNIQUE(task_id, attempt_sequence)
+    );
+    CREATE TRIGGER task_attempts_immutable_update
+      BEFORE UPDATE ON task_attempts BEGIN SELECT RAISE(ABORT, 'task attempt is immutable'); END;
+    CREATE TRIGGER task_attempts_immutable_delete
+      BEFORE DELETE ON task_attempts BEGIN SELECT RAISE(ABORT, 'task attempt is immutable'); END;
+
+    CREATE TABLE task_state_transitions (
+      transition_id TEXT PRIMARY KEY,
+      task_id TEXT NOT NULL REFERENCES tasks(task_id),
+      attempt_id TEXT,
+      from_state TEXT NOT NULL,
+      to_state TEXT NOT NULL,
+      actor TEXT NOT NULL,
+      evidence_json TEXT NOT NULL,
+      blocked_context_json TEXT,
+      expected_version INTEGER NOT NULL,
+      resulting_version INTEGER NOT NULL,
+      event_id TEXT NOT NULL UNIQUE,
+      occurred_at TEXT NOT NULL,
+      UNIQUE(task_id, resulting_version)
+    );
+
+    CREATE TABLE m4_write_scopes (
+      scope_id TEXT PRIMARY KEY,
+      task_id TEXT NOT NULL REFERENCES tasks(task_id),
+      attempt_id TEXT NOT NULL REFERENCES task_attempts(attempt_id),
+      operation_id TEXT NOT NULL,
+      scope_hash TEXT NOT NULL,
+      scope_json TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+    CREATE TABLE m4_leases (
+      lease_id TEXT PRIMARY KEY,
+      task_id TEXT NOT NULL REFERENCES tasks(task_id),
+      attempt_id TEXT NOT NULL REFERENCES task_attempts(attempt_id),
+      operation_id TEXT NOT NULL,
+      status TEXT NOT NULL,
+      generation INTEGER NOT NULL,
+      lease_json TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE TABLE m4_assignments (
+      assignment_id TEXT PRIMARY KEY,
+      task_id TEXT NOT NULL REFERENCES tasks(task_id),
+      attempt_id TEXT NOT NULL REFERENCES task_attempts(attempt_id),
+      operation_id TEXT NOT NULL,
+      worker_id TEXT NOT NULL,
+      status TEXT NOT NULL,
+      assignment_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(task_id, attempt_id, operation_id)
+    );
+    CREATE TABLE m4_approvals (
+      approval_id TEXT PRIMARY KEY,
+      owner_id TEXT NOT NULL,
+      task_id TEXT NOT NULL REFERENCES tasks(task_id),
+      attempt_id TEXT NOT NULL REFERENCES task_attempts(attempt_id),
+      operation_id TEXT NOT NULL,
+      action_digest TEXT NOT NULL,
+      scope_hash TEXT NOT NULL,
+      worker_id TEXT NOT NULL,
+      status TEXT NOT NULL,
+      approved_at TEXT,
+      revoked_at TEXT,
+      created_at TEXT NOT NULL
+    );
+    CREATE TABLE m4_grants (
+      grant_id TEXT PRIMARY KEY,
+      approval_id TEXT NOT NULL UNIQUE REFERENCES m4_approvals(approval_id),
+      task_id TEXT NOT NULL REFERENCES tasks(task_id),
+      attempt_id TEXT NOT NULL REFERENCES task_attempts(attempt_id),
+      operation_id TEXT NOT NULL,
+      action_digest TEXT NOT NULL,
+      status TEXT NOT NULL,
+      grant_json TEXT NOT NULL,
+      issued_at TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      revoked_at TEXT,
+      consumed_at TEXT,
+      result_ref TEXT
+    );
+    CREATE TABLE m4_dispatch_queue (
+      queue_sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_id TEXT NOT NULL REFERENCES tasks(task_id),
+      attempt_id TEXT NOT NULL REFERENCES task_attempts(attempt_id),
+      operation_id TEXT NOT NULL,
+      grant_id TEXT NOT NULL REFERENCES m4_grants(grant_id),
+      status TEXT NOT NULL,
+      enqueued_at TEXT NOT NULL,
+      claimed_at TEXT,
+      UNIQUE(task_id, attempt_id, operation_id)
+    );
+    CREATE INDEX m4_dispatch_fifo_idx ON m4_dispatch_queue(status, queue_sequence);
+    CREATE TABLE m4_results (
+      result_ref TEXT PRIMARY KEY,
+      task_id TEXT NOT NULL REFERENCES tasks(task_id),
+      attempt_id TEXT NOT NULL REFERENCES task_attempts(attempt_id),
+      operation_id TEXT NOT NULL UNIQUE,
+      result_digest TEXT NOT NULL,
+      result_json TEXT NOT NULL,
+      status TEXT NOT NULL,
+      recorded_at TEXT NOT NULL
+    );
+    CREATE TABLE m4_commands (
+      command_scope TEXT NOT NULL,
+      command_id TEXT NOT NULL,
+      request_digest TEXT NOT NULL,
+      result_json TEXT,
+      recorded_at TEXT NOT NULL,
+      PRIMARY KEY(command_scope, command_id)
+    );
+    CREATE TABLE m4_reconciliations (
+      reconciliation_id TEXT PRIMARY KEY,
+      task_id TEXT NOT NULL REFERENCES tasks(task_id),
+      attempt_id TEXT NOT NULL,
+      operation_id TEXT NOT NULL,
+      outcome TEXT NOT NULL,
+      owner_evidence_ref TEXT NOT NULL,
+      runtime_evidence_ref TEXT,
+      recorded_at TEXT NOT NULL
+    );
+  ` },
 ];
 const checksum = (sql: string): string => createHash("sha256").update(sql).digest("hex");
 export class MigrationError extends Error { constructor() { super("Control Plane database migration failed."); this.name = "MigrationError"; } }

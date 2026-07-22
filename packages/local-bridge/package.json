@@ -15,6 +15,7 @@
     "ws": "^8.21.1"
   },
   "devDependencies": {
+    "@chubz/control-plane": "workspace:*",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.15.3",
     "@types/ws": "^8.18.1",

@@ -4,7 +4,7 @@ import { evaluateJournalReconciliation, parseJournalEntry, type JournalEntry } f
 
 export type OperationStage = "dispatch" | "execution" | "integration";
 export type OperationState = "prepared" | "started" | "completed" | "failed" | "execution-unknown" | "reconciled-completed" | "reconciled-failed" | "reconciled-not-executed";
-export type OperationIdentityInput = Readonly<{ taskId: string; attemptId: string; stage: OperationStage; intentDigest: string }>;
+export type OperationIdentityInput = Readonly<{ taskId: string; attemptId: string; stage: OperationStage; intentDigest: string; operationId?: string }>;
 export type ProcessEvidencePair = Readonly<{ worker: unknown | null; validator: unknown | null }>;
 export type OperationRecord = Readonly<{ operationId: string; journalEntryId: string; identity: OperationIdentityInput; state: OperationState; result: unknown | null; failure: string | null; processEvidence: ProcessEvidencePair; updatedAt: string }>;
 export type ExecuteResult = Readonly<{ classification: "executed" | "replay" | "in-progress" | "execution-unknown"; record: OperationRecord }>;
@@ -21,11 +21,13 @@ function canonicalIdentity(value: OperationIdentityInput): string {
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u.test(value.taskId) || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u.test(value.attemptId) || value.taskId.includes("..") || value.attemptId.includes("..")) throw new Error("invalid operation scope identity");
   if (!(value.stage === "dispatch" || value.stage === "execution" || value.stage === "integration")) throw new Error("invalid operation stage");
   if (!/^(sha256:)?[0-9a-f]{64}$/.test(value.intentDigest)) throw new Error("intentDigest must be SHA-256");
-  return JSON.stringify({ attemptId: value.attemptId, intentDigest: value.intentDigest.replace(/^sha256:/u, ""), stage: value.stage, taskId: value.taskId });
+  if (value.operationId !== undefined && (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u.test(value.operationId) || value.operationId.includes(".."))) throw new Error("invalid explicit operation identity");
+  return JSON.stringify({ attemptId: value.attemptId, intentDigest: value.intentDigest.replace(/^sha256:/u, ""), operationId: value.operationId, stage: value.stage, taskId: value.taskId });
 }
 
 export function deriveOperationId(value: OperationIdentityInput): string {
-  return `operation-${createHash("sha256").update(`chubz.m3.operation/v1\n${canonicalIdentity(value)}`).digest("hex")}`;
+  const identity = canonicalIdentity(value);
+  return value.operationId ?? `operation-${createHash("sha256").update(`chubz.m3.operation/v1\n${identity}`).digest("hex")}`;
 }
 
 function boundedJson(value: unknown): string {
@@ -52,6 +54,22 @@ export class OperationJournal {
         sequence INTEGER PRIMARY KEY AUTOINCREMENT, operation_id TEXT NOT NULL,
         state TEXT NOT NULL, recorded_at TEXT NOT NULL,
         FOREIGN KEY(operation_id) REFERENCES operations(operation_id)
+      );
+      CREATE TABLE IF NOT EXISTS grant_authorizations (
+        grant_id TEXT PRIMARY KEY, approval_id TEXT NOT NULL, owner_id TEXT NOT NULL,
+        task_id TEXT NOT NULL, attempt_id TEXT NOT NULL, operation_id TEXT NOT NULL,
+        worker_id TEXT NOT NULL, adapter_id TEXT NOT NULL, scope_hash TEXT NOT NULL,
+        action_digest TEXT NOT NULL, registered_at TEXT NOT NULL, revoked_at TEXT
+      );
+      CREATE TABLE IF NOT EXISTS grant_consumptions (
+        grant_id TEXT PRIMARY KEY, operation_id TEXT NOT NULL UNIQUE,
+        action_digest TEXT NOT NULL, command_digest TEXT NOT NULL,
+        consumed_at TEXT NOT NULL, outcome_ref TEXT, result_json TEXT,
+        FOREIGN KEY(grant_id) REFERENCES grant_authorizations(grant_id)
+      );
+      CREATE TABLE IF NOT EXISTS grant_rejections (
+        rejection_id INTEGER PRIMARY KEY AUTOINCREMENT, grant_id TEXT,
+        code TEXT NOT NULL, recorded_at TEXT NOT NULL
       );
     `);
   }
@@ -169,4 +187,97 @@ export class OperationJournal {
   }
 
   public history(operationId: string): readonly string[] { return (this.database.prepare("SELECT state FROM operation_history WHERE operation_id=? ORDER BY sequence").all(operationId) as Array<{ state: string }>).map((row) => row.state); }
+
+  public registerGrantAuthorization(input: Readonly<{
+    grantId: string; approvalId: string; ownerId: string; taskId: string; attemptId: string;
+    operationId: string; workerId: string; adapterId: string; scopeHash: string; actionDigest: string;
+  }>): "registered" | "duplicate" {
+    const values = Object.values(input);
+    if (values.some((value) => typeof value !== "string" || value.length < 1 || value.length > 512)) throw new Error("invalid grant authorization context");
+    const canonical = JSON.stringify(input);
+    return this.database.transaction(() => {
+      const current = this.database.prepare("SELECT * FROM grant_authorizations WHERE grant_id=?").get(input.grantId) as Record<string, unknown> | undefined;
+      if (current) {
+        const stored = JSON.stringify({ grantId: current["grant_id"], approvalId: current["approval_id"], ownerId: current["owner_id"], taskId: current["task_id"], attemptId: current["attempt_id"], operationId: current["operation_id"], workerId: current["worker_id"], adapterId: current["adapter_id"], scopeHash: current["scope_hash"], actionDigest: current["action_digest"] });
+        if (stored !== canonical) throw new Error("conflicting grant authorization context");
+        return "duplicate" as const;
+      }
+      this.database.prepare("INSERT INTO grant_authorizations(grant_id,approval_id,owner_id,task_id,attempt_id,operation_id,worker_id,adapter_id,scope_hash,action_digest,registered_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)").run(input.grantId, input.approvalId, input.ownerId, input.taskId, input.attemptId, input.operationId, input.workerId, input.adapterId, input.scopeHash, input.actionDigest, new Date().toISOString());
+      return "registered" as const;
+    })();
+  }
+
+  public revokeGrantAuthorization(grantId: string): "revoked" | "already-consumed" {
+    return this.database.transaction(() => {
+      const consumed = this.database.prepare("SELECT 1 FROM grant_consumptions WHERE grant_id=?").get(grantId);
+      if (consumed) return "already-consumed" as const;
+      const changed = this.database.prepare("UPDATE grant_authorizations SET revoked_at=COALESCE(revoked_at,?) WHERE grant_id=?").run(new Date().toISOString(), grantId);
+      if (changed.changes !== 1) throw new Error("unknown grant authorization");
+      return "revoked" as const;
+    })();
+  }
+
+  public recordGrantRejection(grantId: string | null, code: string): void {
+    this.database.prepare("INSERT INTO grant_rejections(grant_id,code,recorded_at) VALUES(?,?,?)").run(grantId?.slice(0, 128) ?? null, code.slice(0, 128), new Date().toISOString());
+  }
+
+  public claimGrantedOperation(input: Readonly<{
+    grantId: string; approvalId: string; ownerId: string; taskId: string; attemptId: string;
+    operationId: string; workerId: string; adapterId: string; scopeHash: string;
+    actionDigest: string; commandDigest: string; failAfterConsumption?: boolean;
+  }>): Readonly<{ classification: "claimed" | "replay" | "in-progress" | "execution-unknown"; record: OperationRecord; result?: unknown }> {
+    return this.database.transaction(() => {
+      const authorization = this.database.prepare("SELECT * FROM grant_authorizations WHERE grant_id=?").get(input.grantId) as Record<string, unknown> | undefined;
+      if (!authorization || authorization["revoked_at"] !== null) throw new Error("grant authorization is unavailable");
+      const exact = authorization["approval_id"] === input.approvalId && authorization["owner_id"] === input.ownerId && authorization["task_id"] === input.taskId && authorization["attempt_id"] === input.attemptId && authorization["operation_id"] === input.operationId && authorization["worker_id"] === input.workerId && authorization["adapter_id"] === input.adapterId && authorization["scope_hash"] === input.scopeHash && authorization["action_digest"] === input.actionDigest;
+      if (!exact) throw new Error("grant authorization binding mismatch");
+      const consumed = this.database.prepare("SELECT command_digest,result_json FROM grant_consumptions WHERE grant_id=?").get(input.grantId) as { command_digest: string; result_json: string | null } | undefined;
+      if (consumed) {
+        if (consumed.command_digest !== input.commandDigest) throw new Error("grant command identity conflict");
+        const record = this.row(input.operationId); if (!record) throw new Error("consumption journal is missing");
+        if (record.state === "execution-unknown") return Object.freeze({ classification: "execution-unknown" as const, record });
+        if (consumed.result_json !== null) return Object.freeze({ classification: "replay" as const, record, result: JSON.parse(consumed.result_json) });
+        return Object.freeze({ classification: "in-progress" as const, record });
+      }
+      const inserted = this.database.prepare("INSERT INTO grant_consumptions(grant_id,operation_id,action_digest,command_digest,consumed_at) VALUES(?,?,?,?,?)").run(input.grantId, input.operationId, input.actionDigest, input.commandDigest, new Date().toISOString());
+      if (inserted.changes !== 1) throw new Error("grant consumption conflict");
+      if (input.failAfterConsumption) throw new Error("injected failure after consumption");
+      const prepared = this.prepare({ taskId: input.taskId, attemptId: input.attemptId, operationId: input.operationId, stage: "execution", intentDigest: input.actionDigest });
+      if (!prepared.inserted) throw new Error("operation was journaled without its grant consumption");
+      return Object.freeze({ classification: "claimed" as const, record: prepared.record });
+    })();
+  }
+
+  public startGrantedOperation(operationId: string): OperationRecord { return this.transition(operationId, "started"); }
+  public completeGrantedOperation(operationId: string, grantId: string, outcomeRef: string, result: unknown): OperationRecord {
+    return this.database.transaction(() => {
+      const json = boundedJson(result);
+      const record = this.transition(operationId, "completed", { result });
+      const updated = this.database.prepare("UPDATE grant_consumptions SET outcome_ref=?,result_json=? WHERE grant_id=? AND operation_id=? AND result_json IS NULL").run(outcomeRef, json, grantId, operationId);
+      if (updated.changes !== 1) throw new Error("grant outcome persistence conflict");
+      return record;
+    })();
+  }
+  public failGrantedOperation(operationId: string, grantId: string, outcomeRef: string, result: unknown, failure: string): OperationRecord {
+    return this.database.transaction(() => {
+      const json = boundedJson(result);
+      const record = this.transition(operationId, "failed", { failure });
+      const updated = this.database.prepare("UPDATE grant_consumptions SET outcome_ref=?,result_json=? WHERE grant_id=? AND operation_id=? AND result_json IS NULL").run(outcomeRef, json, grantId, operationId);
+      if (updated.changes !== 1) throw new Error("grant outcome persistence conflict");
+      return record;
+    })();
+  }
+  public markGrantedOperationUnknown(operationId: string, grantId: string, outcomeRef: string, result: unknown): OperationRecord {
+    return this.database.transaction(() => {
+      const json = boundedJson(result);
+      const record = this.transition(operationId, "execution-unknown", { failure: "execution outcome is ambiguous" });
+      this.database.prepare("UPDATE grant_consumptions SET outcome_ref=?,result_json=? WHERE grant_id=? AND operation_id=? AND result_json IS NULL").run(outcomeRef, json, grantId, operationId);
+      return record;
+    })();
+  }
+
+  public grantConsumption(grantId: string): Readonly<{ operationId: string; outcomeRef: string | null; result: unknown | null }> | null {
+    const row = this.database.prepare("SELECT operation_id,outcome_ref,result_json FROM grant_consumptions WHERE grant_id=?").get(grantId) as { operation_id: string; outcome_ref: string | null; result_json: string | null } | undefined;
+    return row ? Object.freeze({ operationId: row.operation_id, outcomeRef: row.outcome_ref, result: row.result_json === null ? null : JSON.parse(row.result_json) }) : null;
+  }
 }

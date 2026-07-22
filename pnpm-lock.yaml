@@ -66,6 +66,9 @@ importers:
         specifier: ^8.21.1
         version: 8.21.1
     devDependencies:
+      '@chubz/control-plane':
+        specifier: workspace:*
+        version: link:../control-plane
       '@types/better-sqlite3':
         specifier: ^7.6.13
         version: 7.6.13

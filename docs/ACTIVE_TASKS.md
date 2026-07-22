@@ -1,8 +1,8 @@
 # Active Tasks
 
-> **M3 STATUS (2026-07-22):** M2 Control Plane Foundation is accepted on `main` through `13993fc583507509437d2f6121c70eddd3198bfd`. M3 Local Bridge Foundation has explicit owner GO and is active, local-only, and unaccepted on `task/m3-bridge-foundation`; Codex is the implementation worker. Its bounded scope is outbound enrollment/connection, protected local credential storage, persistent at-most-once journaling, process supervision, and managed clone/worktree isolation. It excludes inbound listeners, remote access, worker adapters, orchestration, UI, deployment, production integration, and M4+.
+> **M4 STATUS (2026-07-22):** M3 Local Bridge Foundation independently passed, was owner-accepted, merged, and pushed on `main` at `4474b8a7d3f37c8c53319d88bfc22ad7e352109e`. The owner granted M4 GO on July 22, 2026. M4 is active, local-only, and unaccepted on `task/m4-orchestrator-grants`, created directly from that exact baseline. Its scope is limited to persistent orchestration, Phase-1 HMAC capability grants, accepted assignment/lease/concurrency enforcement, and one synthetic echo worker. M5 and later remain unauthorized.
 
-> **STATUS: M1A-M2 ACCEPTED; M3 LOCAL BRIDGE FOUNDATION ACTIVE, LOCAL-ONLY, AND UNACCEPTED.**
+> **STATUS: M1A-M3 ACCEPTED; M4 ORCHESTRATOR AND CAPABILITY GRANTS ACTIVE, LOCAL-ONLY, AND UNACCEPTED.**
 
 ## Project lifecycle status
 
@@ -16,7 +16,8 @@
 8. **Completed and accepted** — M1E Capture and Projection Contracts passed final independent read-only review. Accepted validation recorded 376 tests and successful typecheck; the work remains pure shared-library contracts only.
 9. **Completed and accepted** — M1F Adapter & Coordination Contracts passed comprehensive independent Claude Sonnet 4.6 review PASS. Accepted validation recorded 395 passing tests and successful typecheck. It remains pure shared schemas, parsers, evaluators, canonicalization/hash helpers, and synthetic tests only; runtime behavior remains deferred.
 10. **Completed and accepted** — M2 Control Plane Foundation, accepted on `main` through `13993fc583507509437d2f6121c70eddd3198bfd`.
-11. **Active and unaccepted** — M3 Local Bridge Foundation on `task/m3-bridge-foundation`; independent read-only security/reliability review and separate owner acceptance remain required.
+11. **Completed and accepted** — M3 Local Bridge Foundation independently passed, was owner-accepted, merged, and pushed on `main` at `4474b8a7d3f37c8c53319d88bfc22ad7e352109e`.
+12. **Active and unaccepted** — M4 Orchestrator and Capability Grants on `task/m4-orchestrator-grants`, starting from `4474b8a7d3f37c8c53319d88bfc22ad7e352109e`; independent read-only security/reliability review and separate owner acceptance remain required.
 
 Earlier project bootstrap and worker onboarding (Codex, BUNSO, Antigravity) are complete and precede item 1.
 
@@ -47,9 +48,9 @@ Deferred owner inputs (not blockers, per D-022): the Obsidian vault path (U-7) r
 
 M1A Core Contracts and M1B Protocol Contracts are completed and merged into `main`.
 
-**M1A through M2 are complete and accepted.** M3 has explicit owner GO only for the bounded local-only Bridge foundation on `task/m3-bridge-foundation`; it remains unaccepted. M4 and later remain unauthorized.
+**M1A through M3 are complete and accepted.** M4 has explicit owner GO only for the bounded local-only synthetic-echo orchestrator and capability-grant implementation on `task/m4-orchestrator-grants`; it remains unaccepted. M5 and later remain unauthorized.
 
-Nothing in this file authorizes runtime orchestration, worker connection, domain or tunnel configuration, server access, MikroTik access, deployment, restart, infrastructure changes, or production actions.
+Nothing in this file authorizes any real worker connection, owner-project write, domain or tunnel configuration, server access, MikroTik access, deployment, restart, infrastructure change, production action, or M5+ work.
 
 ## M1D acceptance record
 

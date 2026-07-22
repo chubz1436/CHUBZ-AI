@@ -1,6 +1,6 @@
 # CHUBZ AI Command Center
 
-> **STATUS: M1A-M2 ACCEPTED; M3 LOCAL BRIDGE FOUNDATION ACTIVE, LOCAL-ONLY, AND UNACCEPTED**
+> **STATUS: M1A-M3 ACCEPTED; M4 ORCHESTRATOR AND CAPABILITY GRANTS ACTIVE, LOCAL-ONLY, AND UNACCEPTED**
 
 CHUBZ AI Command Center is envisioned as a local-first, remotely accessible AI command ecosystem. It will give Kenneth / CHUBZ one chat-style interface for coordinating multiple specialized AI workers while retaining explicit ownership, isolation, traceability, and final approval.
 
@@ -26,7 +26,7 @@ Santos is a separate worker and is not part of Antigravity, Claude Code / BUNSO,
 - Automatic Bridge Log records in Markdown suitable for Obsidian.
 - A future plug-in registry for adding workers without coupling them to the core.
 
-M1A through M2 are accepted. M3 has an explicit owner GO for its bounded local-only Bridge foundation and remains unaccepted pending independent read-only security/reliability review and owner acceptance. M4 and later remain unauthorized. Current architecture alignment and milestone status are maintained in [docs/ACTIVE_TASKS.md](docs/ACTIVE_TASKS.md) and [docs/PHASED_IMPLEMENTATION_PLAN.md](docs/PHASED_IMPLEMENTATION_PLAN.md).
+M1A through M3 are accepted. M3 was independently passed, owner-accepted, merged, and pushed on `main` at `4474b8a7d3f37c8c53319d88bfc22ad7e352109e`. The owner granted M4 GO on July 22, 2026; its bounded synthetic-echo-only implementation is active, local-only, and unaccepted on `task/m4-orchestrator-grants`, starting from that exact M3 baseline. M5 and later remain unauthorized. Current architecture alignment and milestone status are maintained in [docs/ACTIVE_TASKS.md](docs/ACTIVE_TASKS.md) and [docs/PHASED_IMPLEMENTATION_PLAN.md](docs/PHASED_IMPLEMENTATION_PLAN.md).
 
 ## Planning-only domain map
 
@@ -36,4 +36,4 @@ All other proposed subdomains are deferred. No DNS, hosting, tunnel, authenticat
 
 ## Start here
 
-Read [docs/PROJECT_OVERVIEW.md](docs/PROJECT_OVERVIEW.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/SAFETY_AND_APPROVALS.md](docs/SAFETY_AND_APPROVALS.md), and the [BUNSO Experiment Adoption Plan](docs/architecture/BUNSO_EXPERIMENT_ADOPTION_PLAN.md). The recommended next activity is read-only onboarding of every planned worker.
+Read [docs/PROJECT_OVERVIEW.md](docs/PROJECT_OVERVIEW.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/SAFETY_AND_APPROVALS.md](docs/SAFETY_AND_APPROVALS.md), and the [BUNSO Experiment Adoption Plan](docs/architecture/BUNSO_EXPERIMENT_ADOPTION_PLAN.md). The recommended next activity, after the local M4 implementation commit and validation, is an independent read-only M4 security/reliability review.

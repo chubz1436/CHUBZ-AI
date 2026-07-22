@@ -5,6 +5,8 @@ export * from "./app.js";
 export * from "./auth.js";
 export * from "./config.js";
 export * from "./database.js";
+export * from "./grant-engine.js";
+export * from "./orchestrator.js";
 
 if (process.argv[1]?.endsWith("index.ts")) {
   const config = loadConfig();

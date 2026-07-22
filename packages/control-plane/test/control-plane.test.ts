@@ -27,10 +27,10 @@ describe("database foundation", () => {
     const root = mkdtempSync(join(tmpdir(), "chubz-control-plane-test-")); roots.push(root); const config = createTestConfig(root); const first = createControlPlane(config); const db = first.database.connection;
     expect((db.pragma("journal_mode", { simple: true }) as string).toLowerCase()).toBe("wal");
     expect(db.pragma("foreign_keys", { simple: true })).toBe(1);
-    expect((db.prepare("SELECT count(*) AS n FROM schema_migrations").get() as { n: number }).n).toBe(3);
+    expect((db.prepare("SELECT count(*) AS n FROM schema_migrations").get() as { n: number }).n).toBe(4);
     await first.close();
     const second = createControlPlane(config);
-    expect((second.database.connection.prepare("SELECT count(*) AS n FROM schema_migrations").get() as { n: number }).n).toBe(3);
+    expect((second.database.connection.prepare("SELECT count(*) AS n FROM schema_migrations").get() as { n: number }).n).toBe(4);
     await second.close();
   });
 });
@@ -73,7 +73,28 @@ describe("HTTP authentication and browser protections", () => {
 describe("migration hardening", () => {
   const downgradeToV1 = (database: ControlPlaneDatabase): void => {
     const db = database.connection;
-    db.exec("DROP TRIGGER administrators_singleton_insert; DROP TABLE administrator_singleton_guard; DELETE FROM schema_migrations WHERE version IN (2, 3)");
+    db.exec(`
+      DROP TRIGGER administrators_singleton_insert;
+      DROP TRIGGER task_attempts_immutable_update;
+      DROP TRIGGER task_attempts_immutable_delete;
+      DROP TABLE m4_reconciliations;
+      DROP TABLE m4_commands;
+      DROP TABLE m4_results;
+      DROP TABLE m4_dispatch_queue;
+      DROP TABLE m4_grants;
+      DROP TABLE m4_approvals;
+      DROP TABLE m4_assignments;
+      DROP TABLE m4_leases;
+      DROP TABLE m4_write_scopes;
+      DROP TABLE task_state_transitions;
+      DROP TABLE task_attempts;
+      DROP TABLE administrator_singleton_guard;
+      ALTER TABLE tasks DROP COLUMN cancellation_requested_at;
+      ALTER TABLE tasks DROP COLUMN current_operation_id;
+      ALTER TABLE tasks DROP COLUMN created_at;
+      ALTER TABLE tasks DROP COLUMN version;
+      DELETE FROM schema_migrations WHERE version IN (2, 3, 4);
+    `);
   };
   it("upgrades zero and one administrator databases but fails closed for multiple administrators", () => {
     for (const administrators of [0, 1]) {
@@ -88,8 +109,8 @@ describe("migration hardening", () => {
   });
   it("rejects checksum conflicts and unsupported future migration histories", () => {
     const root = mkdtempSync(join(tmpdir(), "chubz-control-plane-test-")); roots.push(root); const config = createTestConfig(root); const database = new ControlPlaneDatabase(config);
-    database.connection.prepare("UPDATE schema_migrations SET checksum='bad' WHERE version=3").run(); database.close(); expect(() => new ControlPlaneDatabase(config)).toThrow(MigrationError);
-    const repaired = new ControlPlaneDatabase({ ...config, databasePath: join(root, "future.sqlite") }); repaired.connection.prepare("UPDATE schema_migrations SET version=99 WHERE version=3").run(); repaired.close(); expect(() => new ControlPlaneDatabase({ ...config, databasePath: join(root, "future.sqlite") })).toThrow(MigrationError);
+    database.connection.prepare("UPDATE schema_migrations SET checksum='bad' WHERE version=4").run(); database.close(); expect(() => new ControlPlaneDatabase(config)).toThrow(MigrationError);
+    const repaired = new ControlPlaneDatabase({ ...config, databasePath: join(root, "future.sqlite") }); repaired.connection.prepare("UPDATE schema_migrations SET version=99 WHERE version=4").run(); repaired.close(); expect(() => new ControlPlaneDatabase({ ...config, databasePath: join(root, "future.sqlite") })).toThrow(MigrationError);
   });
 });
 

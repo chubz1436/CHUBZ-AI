@@ -174,7 +174,7 @@ describe("M2 CSRF evidence completion", () => {
 describe("M2 migration rollback evidence completion", () => {
   it("rolls back a failing migration and never records its version marker", () => {
     const config = isolatedConfig(); const initial = new ControlPlaneDatabase(config); const db = initial.connection;
-    db.exec("DROP TRIGGER administrators_singleton_insert; DROP TABLE administrator_singleton_guard; DELETE FROM schema_migrations WHERE version IN (2, 3)");
+    db.exec("DROP TRIGGER administrators_singleton_insert; DROP TABLE administrator_singleton_guard; DELETE FROM schema_migrations WHERE version IN (2, 3, 4)");
     for (const username of ["owner-one", "owner-two"]) db.prepare("INSERT INTO administrators(id, username, password_hash, created_at) VALUES (?, ?, ?, ?)").run(username, username, "hash", new Date().toISOString());
     initial.close();
     expect(() => new ControlPlaneDatabase(config)).toThrow(MigrationError);
