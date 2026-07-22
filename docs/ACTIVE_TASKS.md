@@ -1,8 +1,8 @@
 # Active Tasks
 
-> **M4 STATUS (2026-07-22):** M3 Local Bridge Foundation independently passed, was owner-accepted, merged, and pushed on `main` at `4474b8a7d3f37c8c53319d88bfc22ad7e352109e`. The owner granted M4 GO on July 22, 2026. M4 is active, local-only, and unaccepted on `task/m4-orchestrator-grants`, created directly from that exact baseline. Its scope is limited to persistent orchestration, Phase-1 HMAC capability grants, accepted assignment/lease/concurrency enforcement, and one synthetic echo worker. M5 and later remain unauthorized.
+> **M5 STATUS (2026-07-22):** M4 Orchestrator and Capability Grants independently passed, was owner-accepted, merged, and pushed on `main` at `2a6c678ca6b4cc107aacb3bd2f81910609c4ad8d`. The owner granted bounded M5 GO on July 22, 2026. M5 is active, local-only, and unaccepted on `task/m5-codex-manual-relay`, created directly from that exact baseline. Codex CLI is the first automated connector; owner-attested manual relay remains the universal fallback. M6 and later remain unauthorized.
 
-> **STATUS: M1A-M3 ACCEPTED; M4 ORCHESTRATOR AND CAPABILITY GRANTS ACTIVE, LOCAL-ONLY, AND UNACCEPTED.**
+> **STATUS: M1A-M4 ACCEPTED; M5 CODEX CLI ADAPTER AND MANUAL RELAY ACTIVE, LOCAL-ONLY, AND UNACCEPTED.**
 
 ## Project lifecycle status
 
@@ -17,7 +17,8 @@
 9. **Completed and accepted** — M1F Adapter & Coordination Contracts passed comprehensive independent Claude Sonnet 4.6 review PASS. Accepted validation recorded 395 passing tests and successful typecheck. It remains pure shared schemas, parsers, evaluators, canonicalization/hash helpers, and synthetic tests only; runtime behavior remains deferred.
 10. **Completed and accepted** — M2 Control Plane Foundation, accepted on `main` through `13993fc583507509437d2f6121c70eddd3198bfd`.
 11. **Completed and accepted** — M3 Local Bridge Foundation independently passed, was owner-accepted, merged, and pushed on `main` at `4474b8a7d3f37c8c53319d88bfc22ad7e352109e`.
-12. **Active and unaccepted** — M4 Orchestrator and Capability Grants on `task/m4-orchestrator-grants`, starting from `4474b8a7d3f37c8c53319d88bfc22ad7e352109e`; independent read-only security/reliability review and separate owner acceptance remain required.
+12. **Completed and accepted** — M4 Orchestrator and Capability Grants independently passed, was owner-accepted, merged, and pushed on `main` at `2a6c678ca6b4cc107aacb3bd2f81910609c4ad8d`.
+13. **Active and unaccepted** — M5 Codex CLI Adapter and Manual Relay on `task/m5-codex-manual-relay`, starting exactly from `2a6c678ca6b4cc107aacb3bd2f81910609c4ad8d`; independent read-only adapter/security/reliability review and separate owner acceptance remain required.
 
 Earlier project bootstrap and worker onboarding (Codex, BUNSO, Antigravity) are complete and precede item 1.
 
@@ -48,9 +49,9 @@ Deferred owner inputs (not blockers, per D-022): the Obsidian vault path (U-7) r
 
 M1A Core Contracts and M1B Protocol Contracts are completed and merged into `main`.
 
-**M1A through M3 are complete and accepted.** M4 has explicit owner GO only for the bounded local-only synthetic-echo orchestrator and capability-grant implementation on `task/m4-orchestrator-grants`; it remains unaccepted. M5 and later remain unauthorized.
+**M1A through M4 are complete and accepted.** M5 has explicit owner GO only for the bounded local-only Codex CLI adapter and owner-attested manual-relay implementation on `task/m5-codex-manual-relay`; it remains unaccepted. Codex CLI is the first automated connector and manual relay remains the universal owner-attested fallback. M6 and later remain unauthorized.
 
-Nothing in this file authorizes any real worker connection, owner-project write, domain or tunnel configuration, server access, MikroTik access, deployment, restart, infrastructure change, production action, or M5+ work.
+Nothing in this file authorizes owner-project integration, domain or tunnel configuration, server access, MikroTik access, deployment, restart, infrastructure change, production action, or M6+ work.
 
 ## M1D acceptance record
 

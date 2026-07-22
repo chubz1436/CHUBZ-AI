@@ -166,6 +166,26 @@ const migrations: readonly Migration[] = [
       recorded_at TEXT NOT NULL
     );
   ` },
+  { version: 5, sql: `
+    CREATE TABLE m5_adapter_readiness (
+      readiness_id TEXT PRIMARY KEY,
+      worker_id TEXT NOT NULL,
+      adapter_id TEXT NOT NULL,
+      readiness_state TEXT NOT NULL,
+      freeze_state TEXT NOT NULL,
+      readiness_json TEXT NOT NULL,
+      evidence_json TEXT NOT NULL,
+      recorded_at TEXT NOT NULL
+    );
+    CREATE TABLE m5_worker_states (
+      worker_id TEXT PRIMARY KEY,
+      state TEXT NOT NULL CHECK(state IN ('enabled','disabled','frozen')),
+      updated_at TEXT NOT NULL
+    );
+    INSERT INTO m5_worker_states(worker_id,state,updated_at) VALUES
+      ('codex-cli','enabled',CURRENT_TIMESTAMP),
+      ('manual-relay','enabled',CURRENT_TIMESTAMP);
+  ` },
 ];
 const checksum = (sql: string): string => createHash("sha256").update(sql).digest("hex");
 export class MigrationError extends Error { constructor() { super("Control Plane database migration failed."); this.name = "MigrationError"; } }

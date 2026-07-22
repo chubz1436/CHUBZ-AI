@@ -27,10 +27,10 @@ describe("database foundation", () => {
     const root = mkdtempSync(join(tmpdir(), "chubz-control-plane-test-")); roots.push(root); const config = createTestConfig(root); const first = createControlPlane(config); const db = first.database.connection;
     expect((db.pragma("journal_mode", { simple: true }) as string).toLowerCase()).toBe("wal");
     expect(db.pragma("foreign_keys", { simple: true })).toBe(1);
-    expect((db.prepare("SELECT count(*) AS n FROM schema_migrations").get() as { n: number }).n).toBe(4);
+    expect((db.prepare("SELECT count(*) AS n FROM schema_migrations").get() as { n: number }).n).toBe(5);
     await first.close();
     const second = createControlPlane(config);
-    expect((second.database.connection.prepare("SELECT count(*) AS n FROM schema_migrations").get() as { n: number }).n).toBe(4);
+    expect((second.database.connection.prepare("SELECT count(*) AS n FROM schema_migrations").get() as { n: number }).n).toBe(5);
     await second.close();
   });
 });
@@ -77,6 +77,8 @@ describe("migration hardening", () => {
       DROP TRIGGER administrators_singleton_insert;
       DROP TRIGGER task_attempts_immutable_update;
       DROP TRIGGER task_attempts_immutable_delete;
+      DROP TABLE m5_worker_states;
+      DROP TABLE m5_adapter_readiness;
       DROP TABLE m4_reconciliations;
       DROP TABLE m4_commands;
       DROP TABLE m4_results;
@@ -93,7 +95,7 @@ describe("migration hardening", () => {
       ALTER TABLE tasks DROP COLUMN current_operation_id;
       ALTER TABLE tasks DROP COLUMN created_at;
       ALTER TABLE tasks DROP COLUMN version;
-      DELETE FROM schema_migrations WHERE version IN (2, 3, 4);
+      DELETE FROM schema_migrations WHERE version IN (2, 3, 4, 5);
     `);
   };
   it("upgrades zero and one administrator databases but fails closed for multiple administrators", () => {

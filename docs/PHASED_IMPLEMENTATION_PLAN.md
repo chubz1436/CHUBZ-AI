@@ -1,8 +1,8 @@
 # Phased Implementation Plan
 
-> **M4 STATUS (2026-07-22):** M3 Local Bridge Foundation independently passed, was owner-accepted, merged, and pushed on `main` at `4474b8a7d3f37c8c53319d88bfc22ad7e352109e`. The owner granted M4 GO on July 22, 2026. M4 is active, local-only, and unaccepted on `task/m4-orchestrator-grants`, created from that exact baseline. Its bounded scope is persistent orchestration, Phase-1 HMAC capability grants, accepted assignment/lease/concurrency enforcement, and one synthetic echo worker. M5 and later remain unauthorized. Independent read-only security/reliability review and separate owner acceptance are required.
+> **M5 STATUS (2026-07-22):** M4 Orchestrator and Capability Grants independently passed, was owner-accepted, merged, and pushed on `main` at `2a6c678ca6b4cc107aacb3bd2f81910609c4ad8d`. The owner granted bounded M5 GO on July 22, 2026. M5 is active, local-only, and unaccepted on `task/m5-codex-manual-relay`, created from that exact baseline. Codex CLI is the first automated connector; owner-attested manual relay remains the universal fallback. M6 and later remain unauthorized. Independent read-only adapter/security/reliability review and separate owner acceptance are required.
 
-> **STATUS: ACCEPTED PLAN — M1A-M3 COMPLETE AND ACCEPTED; M4 ORCHESTRATOR AND CAPABILITY GRANTS ACTIVE, LOCAL-ONLY, AND UNACCEPTED**
+> **STATUS: ACCEPTED PLAN — M1A-M4 COMPLETE AND ACCEPTED; M5 CODEX CLI ADAPTER AND MANUAL RELAY ACTIVE, LOCAL-ONLY, AND UNACCEPTED**
 >
 > Author: Claude Code / BUNSO (Fable 5), per accepted decision D-005; implementation-worker assignment amended by D-019.
 > Date: 2026-07-10. Revised following Bantay's required revisions R1–R7.

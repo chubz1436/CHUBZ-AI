@@ -127,6 +127,7 @@ export type ProcessRunResult = Readonly<{
   stdoutTruncated: boolean;
   stderrTruncated: boolean;
   terminationEvidence: TerminationEvidence | null;
+  stopReason: "timeout" | "cancel" | null;
 }>;
 
 export class ProcessSupervisor {
@@ -164,15 +165,17 @@ export class ProcessSupervisor {
 
     let exit: ProcessExit | null = null;
     let terminationEvidence: TerminationEvidence | null = null;
+    let resolvedStopReason: "timeout" | "cancel" | null = null;
     let state: ProcessRunResult["state"];
     if (outcome.kind === "exit") { exit = outcome.exit; state = exit.code === 0 ? "completed" : "failed"; }
     else {
+      resolvedStopReason = outcome.reason;
       terminationEvidence = await this.safeTerminate(child.pid, request.role, request.terminationDeadlineMs);
       state = terminationEvidence.proven ? "cancelled" : "execution-unknown";
       if (terminationEvidence.proven) exit = await Promise.race([child.exit, new Promise<null>((resolve) => setTimeout(() => resolve(null), request.terminationDeadlineMs))]);
     }
     await Promise.race([drains, new Promise<void>((resolve) => setTimeout(resolve, 1_000))]);
-    return Object.freeze({ rootPid: child.pid, state, exit, stdout: stdout.text(), stderr: stderr.text(), stdoutTruncated: stdout.truncated, stderrTruncated: stderr.truncated, terminationEvidence });
+    return Object.freeze({ rootPid: child.pid, state, exit, stdout: stdout.text(), stderr: stderr.text(), stdoutTruncated: stdout.truncated, stderrTruncated: stderr.truncated, terminationEvidence, stopReason: resolvedStopReason });
   }
 
   private async safeTerminate(rootPid: number, role: TreeRole, deadlineMs: number): Promise<TerminationEvidence> {

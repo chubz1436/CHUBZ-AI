@@ -1,8 +1,10 @@
 # Decisions
 
+**M5 GO (2026-07-22):** M4 Orchestrator and Capability Grants is accepted on `main` at `2a6c678ca6b4cc107aacb3bd2f81910609c4ad8d`. The owner authorized one bounded local-only M5 batch on `task/m5-codex-manual-relay`, created from that exact baseline. M5 covers the first automated Codex CLI connector and the universal owner-attested manual-relay fallback. It excludes owner-project integration, UI, routing, remote access, deployment, and M6+. Independent read-only adapter/security/reliability review and separate owner acceptance remain required.
+
 **M3 GO (2026-07-22):** M2 Control Plane Foundation is accepted on `main` through `13993fc583507509437d2f6121c70eddd3198bfd`. The owner authorized one bounded local-only M3 Local Bridge Foundation batch on `task/m3-bridge-foundation`, implemented by Codex. M3 covers outbound-only enrollment/connection, protected local credential storage, persistent at-most-once operation journaling, process supervision, and managed clone/worktree isolation. It excludes inbound listeners, remote access, worker adapters, orchestration, UI, deployment, production integration, and M4+. Independent read-only security/reliability review and separate owner acceptance remain required.
 
-> **STATUS: DECISIONS D-001 … D-032 ACCEPTED BY OWNER — M1A-M2 ACCEPTED; M3 LOCAL BRIDGE FOUNDATION ACTIVE, LOCAL-ONLY, AND UNACCEPTED; M4+ UNAUTHORIZED**
+> **STATUS: DECISIONS D-001 … D-032 ACCEPTED BY OWNER — M1A-M4 ACCEPTED; M5 CODEX CLI ADAPTER AND MANUAL RELAY ACTIVE, LOCAL-ONLY, AND UNACCEPTED; M6+ UNAUTHORIZED**
 
 This file is the decision log. An entry marked **ACCEPTED BY OWNER** records a decision Kenneth / CHUBZ has approved. Acceptance of a design decision does **not** by itself authorize implementation, deployment, infrastructure configuration, or production access; each implementation phase carries its own explicit owner GO.
 

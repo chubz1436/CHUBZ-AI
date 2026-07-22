@@ -4,3 +4,7 @@ export * from "./journal.js";
 export * from "./process-supervisor.js";
 export * from "./managed-repository.js";
 export * from "./echo-bridge.js";
+export * from "./adapter-registry.js";
+export * from "./codex-adapter.js";
+export * from "./manual-relay.js";
+export * from "./codex-bridge.js";
