@@ -8,11 +8,14 @@
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
+    "build": "tsc --noEmit",
+    "lint": "eslint src/app.ts src/auth.ts src/database.ts src/m6-ui.ts src/orchestrator.ts test/m6-ui.test.ts --max-warnings=0",
     "start": "tsx src/index.ts"
   },
   "dependencies": {
     "@chubz/shared": "workspace:*",
     "@fastify/cookie": "^11.0.2",
+    "@fastify/static": "^8.2.0",
     "@fastify/websocket": "^11.2.0",
     "argon2": "^0.44.0",
     "better-sqlite3": "^12.5.0",

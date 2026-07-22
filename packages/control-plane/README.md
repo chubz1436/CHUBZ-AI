@@ -8,4 +8,6 @@ The sole administrator is created through an explicit bootstrap endpoint before 
 
 Failed-login buckets expire after 60 seconds and are capped at 1,024 entries by default (`CONTROL_PLANE_LOGIN_ATTEMPT_WINDOW_MS`, `CONTROL_PLANE_LOGIN_BUCKET_MAXIMUM`). Authentication audit records are retained for 30 days and capped at 10,000 rows (`CONTROL_PLANE_AUTH_EVENT_RETENTION_MS`, `CONTROL_PLANE_AUTH_EVENT_MAXIMUM`); both bounds are enforced transactionally.
 
-M2 stores protocol idempotency results and append-only ordered events, but does not dispatch work, execute an operation, establish task authority from caller input, connect a Bridge/adapter, serve a web UI, or expose a remote surface.
+M6 adds a same-origin local web surface and protected `/v1/ui/*` projection/mutation routes over the accepted M2-M5 state, orchestration, grant, readiness, and manual-relay foundations. Browser responses deliberately omit grant authentication, credential, environment, and raw readiness-evidence material. WebSocket task events are persisted in the `ui-tasks` stream for cursor-based resume; snapshots remain the recovery authority.
+
+The Control Plane still does not expose a remote surface or add an inbound Bridge listener. Bridge-dependent artifact transport and readiness probes fail closed when no authoritative outbound Bridge connection is available.

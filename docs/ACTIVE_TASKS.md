@@ -1,8 +1,10 @@
 # Active Tasks
 
-> **M5 STATUS (2026-07-22):** M4 Orchestrator and Capability Grants independently passed, was owner-accepted, merged, and pushed on `main` at `2a6c678ca6b4cc107aacb3bd2f81910609c4ad8d`. The owner granted bounded M5 GO on July 22, 2026. M5 is active, local-only, and unaccepted on `task/m5-codex-manual-relay`, created directly from that exact baseline. Codex CLI is the first automated connector; owner-attested manual relay remains the universal fallback. M6 and later remain unauthorized.
+> **M6 STATUS (2026-07-22):** M1A-M5 are accepted on `main` at `3e926486f03223ee93591ca0822568217a26eb2b`. The owner authorized the bounded, local-only M6 web chat and Kanban milestone on `task/m6-web-chat-kanban-ui`. M6 remains unaccepted pending independent read-only review and owner acceptance. M7 and later remain unauthorized.
 
-> **STATUS: M1A-M4 ACCEPTED; M5 CODEX CLI ADAPTER AND MANUAL RELAY ACTIVE, LOCAL-ONLY, AND UNACCEPTED.**
+> **M5 COMPLETION (2026-07-22):** The Codex CLI adapter and owner-attested manual relay independently passed, were owner-accepted, merged, and pushed on `main` at `3e926486f03223ee93591ca0822568217a26eb2b`.
+
+> **STATUS: M1A-M5 ACCEPTED; M6 WEB CHAT AND KANBAN CANDIDATE ACTIVE, LOCAL-ONLY, AND UNACCEPTED.**
 
 ## Project lifecycle status
 

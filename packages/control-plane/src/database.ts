@@ -186,6 +186,30 @@ const migrations: readonly Migration[] = [
       ('codex-cli','enabled',CURRENT_TIMESTAMP),
       ('manual-relay','enabled',CURRENT_TIMESTAMP);
   ` },
+  { version: 6, sql: `
+    CREATE TABLE m6_mutations (
+      mutation_scope TEXT NOT NULL,
+      idempotency_key TEXT NOT NULL,
+      request_digest TEXT NOT NULL,
+      result_json TEXT,
+      recorded_at TEXT NOT NULL,
+      PRIMARY KEY(mutation_scope, idempotency_key)
+    );
+    CREATE TABLE m6_manual_results (
+      result_ref TEXT PRIMARY KEY,
+      task_id TEXT NOT NULL REFERENCES tasks(task_id),
+      attempt_id TEXT NOT NULL REFERENCES task_attempts(attempt_id),
+      operation_id TEXT NOT NULL,
+      result_digest TEXT NOT NULL,
+      result_json TEXT NOT NULL,
+      recorded_at TEXT NOT NULL,
+      UNIQUE(task_id, attempt_id, operation_id)
+    );
+    CREATE TRIGGER m6_manual_results_immutable_update
+      BEFORE UPDATE ON m6_manual_results BEGIN SELECT RAISE(ABORT, 'manual result is immutable'); END;
+    CREATE TRIGGER m6_manual_results_immutable_delete
+      BEFORE DELETE ON m6_manual_results BEGIN SELECT RAISE(ABORT, 'manual result is immutable'); END;
+  ` },
 ];
 const checksum = (sql: string): string => createHash("sha256").update(sql).digest("hex");
 export class MigrationError extends Error { constructor() { super("Control Plane database migration failed."); this.name = "MigrationError"; } }

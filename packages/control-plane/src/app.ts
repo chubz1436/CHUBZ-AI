@@ -1,13 +1,21 @@
 import { createHash, randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import cookie from "@fastify/cookie";
+import fastifyStatic from "@fastify/static";
 import websocket from "@fastify/websocket";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import { parseClientToControlPlaneMessage, type ControlPlaneToClientMessage, canonicalizeClientMutationForDigest, classifyDelivery, scopeKey } from "@chubz/shared";
 import { detectRedactions, redactText } from "@chubz/shared";
+import type WebSocket from "ws";
 import type { AuthService, Principal } from "./auth.js";
 import { AuthService as AuthServiceClass, BootstrapConflictError } from "./auth.js";
 import type { ControlPlaneConfig } from "./config.js";
 import { ControlPlaneDatabase } from "./database.js";
+import { Phase1GrantKey } from "./grant-engine.js";
+import { M6UiService, mapM6Error } from "./m6-ui.js";
+import { M4Orchestrator } from "./orchestrator.js";
 
 export type ControlPlane = Readonly<{ app: FastifyInstance; database: ControlPlaneDatabase; auth: AuthService; close: () => Promise<void>; emitEvent: (streamId: string, message: ControlPlaneToClientMessage) => void }>;
 const json = "application/json";
@@ -21,7 +29,7 @@ const safeDetail = (value: unknown): string | undefined => {
   const result = redactText(value, findings.value);
   return result.ok ? result.value.text.slice(0, 512) : "[redacted]";
 };
-const errorMessage = (code: string): string => ({ INVALID_REQUEST: "The request is invalid.", UNAUTHORIZED: "Authentication is required.", FORBIDDEN: "The request is not permitted.", CONFLICT: "The requested setup is no longer available.", RATE_LIMITED: "Too many attempts. Try again later.", IDEMPOTENCY_CONFLICT: "The request conflicts with a prior delivery.", UNAVAILABLE: "The service is not ready." }[code] ?? "The request could not be processed.");
+const errorMessage = (code: string): string => ({ INVALID_REQUEST: "The request is invalid.", INVALID_INPUT: "The request is invalid.", LIMIT_EXCEEDED: "The request exceeds a safe bound.", UNAUTHORIZED: "Authentication is required.", FORBIDDEN: "The request is not permitted.", NOT_FOUND: "The requested record was not found.", CONFLICT: "The authoritative state changed or the request conflicts with an earlier action.", STALE_STATE: "The task changed. Refresh before trying again.", STOP_POINT: "The action is unavailable at the current safety boundary.", ILLEGAL_TRANSITION: "The requested state transition is unavailable.", RATE_LIMITED: "Too many attempts. Try again later.", IDEMPOTENCY_CONFLICT: "The request conflicts with a prior delivery.", UNAVAILABLE: "The required authoritative service is unavailable." }[code] ?? "The request could not be processed.");
 const publicError = (reply: FastifyReply, status: number, code: string, requestId: string) => reply.code(status).send({ error: { code, message: errorMessage(code), requestId } });
 const isOriginAllowed = (request: FastifyRequest, config: ControlPlaneConfig): boolean => request.headers.origin === config.allowedOrigin;
 const reqId = (request: FastifyRequest): string => typeof request.id === "string" ? request.id.slice(0, 128) : messageId();
@@ -31,6 +39,9 @@ type LoginBucketExpiry = Readonly<{ key: string; expiresAt: number; generation: 
 export function createControlPlane(config: ControlPlaneConfig): ControlPlane {
   const database = new ControlPlaneDatabase(config);
   const auth = new AuthServiceClass(database, config);
+  const grantSecret = createHash("sha256").update(`chubz.m6.runtime-grant/v1\n${config.sessionSecret}`, "utf8").digest();
+  const orchestrator = new M4Orchestrator(database, new Phase1GrantKey("control-plane-runtime", grantSecret));
+  const ui = new M6UiService(database, orchestrator);
   const loginBuckets = new Map<string, LoginBucket>();
   const loginBucketExpiries: LoginBucketExpiry[] = [];
   let loginBucketGeneration = 0;
@@ -42,10 +53,15 @@ export function createControlPlane(config: ControlPlaneConfig): ControlPlane {
     }
   };
   const app = Fastify({ logger: { level: config.logLevel }, bodyLimit: config.requestBodyLimit, genReqId: () => messageId() });
+  const browserSockets = new Set<WebSocket>();
   void app.register(cookie);
   void app.register(websocket, { options: { maxPayload: config.websocketMessageLimit } });
+  const webRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../web-app/dist");
+  if (existsSync(webRoot)) void app.register(fastifyStatic, { root: webRoot, prefix: "/", decorateReply: false, wildcard: false });
   app.addHook("onRequest", async (request, reply) => {
-    reply.header("X-Content-Type-Options", "nosniff").header("X-Frame-Options", "DENY").header("Referrer-Policy", "no-referrer").header("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'; base-uri 'none'").header("Cache-Control", "no-store");
+    const isWebAsset = request.url === "/" || request.url.startsWith("/assets/");
+    const csp = isWebAsset ? "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'" : "default-src 'none'; frame-ancestors 'none'; base-uri 'none'";
+    reply.header("X-Content-Type-Options", "nosniff").header("X-Frame-Options", "DENY").header("Referrer-Policy", "no-referrer").header("Content-Security-Policy", csp).header("Cache-Control", "no-store");
     if (request.method !== "GET" && request.method !== "HEAD" && request.url !== "/v1/auth/login" && request.url !== "/v1/auth/bootstrap") {
       if (!isOriginAllowed(request, config)) return publicError(reply, 403, "FORBIDDEN", reqId(request));
       const principal = auth.authenticate(request.cookies[config.cookieName]);
@@ -81,7 +97,50 @@ export function createControlPlane(config: ControlPlaneConfig): ControlPlane {
     try { const result = await auth.login(request.body?.username as string, request.body?.password as string, reqId(request)); current.count = 0; reply.setCookie(config.cookieName, result.cookie, { httpOnly: true, sameSite: "strict", secure: config.secureCookie, path: "/", maxAge: Math.floor(config.sessionTtlMs / 1000) }); return { csrfToken: result.principal.csrfToken }; } catch { return publicError(reply, 401, "UNAUTHORIZED", reqId(request)); }
   });
   app.post("/v1/auth/logout", async (request, reply) => { auth.revoke(request.cookies[config.cookieName], reqId(request)); reply.clearCookie(config.cookieName, { path: "/" }); return reply.code(204).send(); });
-  app.get("/v1/session", async (request, reply) => { const principal = auth.authenticate(request.cookies[config.cookieName]); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request)); return { username: principal.username }; });
+  app.get("/v1/session", async (request, reply) => { const principal = auth.authenticate(request.cookies[config.cookieName]); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request)); return { username: principal.username, role: "sole-administrator", csrfToken: principal.csrfToken }; });
+
+  const principalFor = (request: FastifyRequest): Principal | undefined => auth.authenticate(request.cookies[config.cookieName]);
+  const m6Failure = (error: unknown, request: FastifyRequest, reply: FastifyReply) => { const mapped = mapM6Error(error); app.log.warn({ event: "m6-request-rejected", requestId: reqId(request), code: mapped.code }); return publicError(reply, mapped.status, mapped.code, reqId(request)); };
+  const publishTaskEvent = (taskId: string, eventKind: string): void => {
+    const streamId = "ui-tasks";
+    const stream = database.connection.prepare("SELECT head_sequence FROM event_streams WHERE stream_id=?").get(streamId) as { head_sequence: number } | undefined;
+    const sequence = (stream?.head_sequence ?? 0) + 1;
+    const at = now(); const eventId = `event-${randomUUID()}`;
+    const message: ControlPlaneToClientMessage = { protocolVersion: "1.0", messageId: messageId(), messageKind: "task.event", sentAt: at, taskId, payload: { streamId, sequence, eventId, taskId, occurredAt: at, eventKind } };
+    emitEvent(streamId, message);
+  };
+  app.get("/v1/ui/snapshot", async (request, reply) => {
+    const principal = principalFor(request); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request));
+    return { ...ui.snapshot(principal), csrfToken: principal.csrfToken };
+  });
+  app.post<{ Body: Record<string, unknown> }>("/v1/ui/tasks", async (request, reply) => {
+    const principal = principalFor(request); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request));
+    try { const result = ui.createTask(principal, request.body); publishTaskEvent(String(result["taskId"]), "task.created"); return reply.code(201).send(result); } catch (error) { return m6Failure(error, request, reply); }
+  });
+  app.post<{ Params: { taskId: string }; Body: Record<string, unknown> }>("/v1/ui/tasks/:taskId/approve-dispatch", async (request, reply) => {
+    const principal = principalFor(request); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request));
+    try { const result = ui.approveDispatch(principal, request.params.taskId, request.body); publishTaskEvent(request.params.taskId, "dispatch.approved"); return result; } catch (error) { return m6Failure(error, request, reply); }
+  });
+  app.post<{ Params: { taskId: string }; Body: Record<string, unknown> }>("/v1/ui/tasks/:taskId/cancel", async (request, reply) => {
+    const principal = principalFor(request); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request));
+    try { const result = ui.cancel(principal, request.params.taskId, request.body); publishTaskEvent(request.params.taskId, "cancellation.requested"); return result; } catch (error) { return m6Failure(error, request, reply); }
+  });
+  app.post<{ Params: { taskId: string }; Body: Record<string, unknown> }>("/v1/ui/tasks/:taskId/decision", async (request, reply) => {
+    const principal = principalFor(request); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request));
+    try { const result = ui.decideResult(principal, request.params.taskId, request.body); publishTaskEvent(request.params.taskId, "result.decided"); return result; } catch (error) { return m6Failure(error, request, reply); }
+  });
+  app.post<{ Params: { taskId: string }; Body: Record<string, unknown> }>("/v1/ui/tasks/:taskId/manual-text", async (request, reply) => {
+    const principal = principalFor(request); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request));
+    try { const result = ui.manualText(principal, request.params.taskId, request.body); publishTaskEvent(request.params.taskId, "manual-relay.result-recorded"); return result; } catch (error) { return m6Failure(error, request, reply); }
+  });
+  app.post<{ Params: { taskId: string }; Body: Record<string, unknown> }>("/v1/ui/tasks/:taskId/manual-artifacts", async (request, reply) => {
+    const principal = principalFor(request); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request));
+    try { return ui.artifactUnavailable(request.body); } catch (error) { return m6Failure(error, request, reply); }
+  });
+  app.post<{ Body: Record<string, unknown> }>("/v1/ui/adapters/codex/refresh", async (request, reply) => {
+    const principal = principalFor(request); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request));
+    try { return ui.artifactUnavailable(request.body); } catch (error) { return m6Failure(error, request, reply); }
+  });
   // WebSocket routes are registered after the plugin has installed its route hook.
   // This preserves the plugin's upgrade handler instead of treating this as HTTP.
   app.after(() => {
@@ -89,6 +148,7 @@ export function createControlPlane(config: ControlPlaneConfig): ControlPlane {
     if (!isOriginAllowed(request, config)) { socket.close(1008, "origin denied"); return; }
     const principal = auth.authenticate(request.cookies[config.cookieName]);
     if (!principal) { socket.close(1008, "authentication required"); return; }
+    browserSockets.add(socket);
     let queued = 0; let closed = false;
     const send = (value: unknown) => { if (closed || queued >= 64) { socket.close(1013, "backpressure"); return; } queued += 1; socket.send(JSON.stringify(value), () => { queued -= 1; }); };
     const protocolError = (code: string) => send({ protocolVersion: "1.0", messageId: messageId(), messageKind: "protocol.error", sentAt: now(), payload: { error: { code, summary: code === "IDEMPOTENCY_CONFLICT" ? "Idempotency key conflicts with a prior request." : "The message was rejected." } } });
@@ -122,6 +182,7 @@ export function createControlPlane(config: ControlPlaneConfig): ControlPlane {
         }
         if (message.messageKind === "stream.resume") {
           const cursor = message.payload.cursor; const stream = database.connection.prepare("SELECT head_sequence, oldest_retained_sequence FROM event_streams WHERE stream_id=?").get(cursor.streamId) as { head_sequence: number; oldest_retained_sequence: number } | undefined;
+          if (!stream && cursor.lastConsumedSequence === 0) return;
           if (!stream || cursor.lastConsumedSequence + 1 < stream.oldest_retained_sequence || cursor.lastConsumedSequence > stream.head_sequence) return protocolError("CURSOR_UNAVAILABLE");
           const events = database.connection.prepare("SELECT payload_json FROM events WHERE stream_id=? AND sequence>? ORDER BY sequence ASC LIMIT 64").all(cursor.streamId, cursor.lastConsumedSequence) as Array<{ payload_json: string }>;
           for (const event of events) send(JSON.parse(event.payload_json)); return;
@@ -129,11 +190,13 @@ export function createControlPlane(config: ControlPlaneConfig): ControlPlane {
         return send({ protocolVersion: "1.0", messageId: messageId(), messageKind: "request.accepted", sentAt: now(), payload: { acceptedMessageId: message.messageId } });
       } catch { protocolError("VALIDATION_ERROR"); }
     });
-    socket.on("close", () => { closed = true; }); socket.on("error", () => { closed = true; });
+    socket.on("close", () => { closed = true; browserSockets.delete(socket); }); socket.on("error", () => { closed = true; browserSockets.delete(socket); });
   });
   });
   const emitEvent = (streamId: string, message: ControlPlaneToClientMessage): void => {
     const db = database.connection; db.transaction(() => { const stream = db.prepare("SELECT head_sequence FROM event_streams WHERE stream_id=?").get(streamId) as { head_sequence: number } | undefined; const sequence = (stream?.head_sequence ?? 0) + 1; if (!stream) db.prepare("INSERT INTO event_streams(stream_id,head_sequence,oldest_retained_sequence) VALUES(?,?,?)").run(streamId, sequence, 1); else db.prepare("UPDATE event_streams SET head_sequence=? WHERE stream_id=?").run(sequence, streamId); db.prepare("INSERT INTO events(stream_id,sequence,event_id,payload_json,occurred_at) VALUES(?,?,?,?,?)").run(streamId, sequence, message.messageId, JSON.stringify(message), now()); })();
+    const serialized = JSON.stringify(message);
+    for (const socket of browserSockets) if (socket.readyState === socket.OPEN && socket.bufferedAmount < config.websocketMessageLimit * 4) socket.send(serialized, () => undefined);
   };
   return Object.freeze({ app, database, auth, emitEvent, close: async () => { await app.close(); database.close(); } });
 }

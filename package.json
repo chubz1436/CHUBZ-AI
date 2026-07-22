@@ -2,7 +2,7 @@
   "name": "chubz-ai-command-center",
   "version": "0.1.0",
   "private": true,
-  "description": "CHUBZ AI Command Center monorepo (M1A: shared contracts only)",
+  "description": "CHUBZ AI Command Center local control plane, Bridge, contracts, and web interface",
   "packageManager": "pnpm@11.11.0",
   "engines": {
     "node": ">=20",
@@ -10,6 +10,13 @@
   },
   "scripts": {
     "test": "pnpm -r run test",
-    "typecheck": "pnpm -r run typecheck"
+    "typecheck": "pnpm -r run typecheck",
+    "build": "pnpm -r run build",
+    "lint": "pnpm -r run lint"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.31.0",
+    "eslint": "^9.31.0",
+    "typescript-eslint": "^8.38.0"
   }
 }

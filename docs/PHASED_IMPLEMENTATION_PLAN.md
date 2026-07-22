@@ -1,8 +1,10 @@
 # Phased Implementation Plan
 
-> **M5 STATUS (2026-07-22):** M4 Orchestrator and Capability Grants independently passed, was owner-accepted, merged, and pushed on `main` at `2a6c678ca6b4cc107aacb3bd2f81910609c4ad8d`. The owner granted bounded M5 GO on July 22, 2026. M5 is active, local-only, and unaccepted on `task/m5-codex-manual-relay`, created from that exact baseline. Codex CLI is the first automated connector; owner-attested manual relay remains the universal fallback. M6 and later remain unauthorized. Independent read-only adapter/security/reliability review and separate owner acceptance are required.
+> **M6 STATUS (2026-07-22):** M1A-M5 are accepted on `main` at `3e926486f03223ee93591ca0822568217a26eb2b`. The owner granted bounded local-only M6 GO for the web chat, authoritative Kanban/task detail, owner actions, readiness/manual-relay presentation, and reconnectable live updates. M7 and later remain separately gated.
 
-> **STATUS: ACCEPTED PLAN — M1A-M4 COMPLETE AND ACCEPTED; M5 CODEX CLI ADAPTER AND MANUAL RELAY ACTIVE, LOCAL-ONLY, AND UNACCEPTED**
+> **M5 COMPLETION (2026-07-22):** The Codex CLI adapter and owner-attested manual relay independently passed, were owner-accepted, merged, and pushed on `main` at `3e926486f03223ee93591ca0822568217a26eb2b`.
+
+> **STATUS: ACCEPTED PLAN — M1A-M5 COMPLETE AND ACCEPTED; M6 WEB CHAT AND KANBAN CANDIDATE ACTIVE, LOCAL-ONLY, AND UNACCEPTED**
 >
 > Author: Claude Code / BUNSO (Fable 5), per accepted decision D-005; implementation-worker assignment amended by D-019.
 > Date: 2026-07-10. Revised following Bantay's required revisions R1–R7.

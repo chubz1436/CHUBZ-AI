@@ -260,6 +260,26 @@ export class M4Orchestrator {
     }))();
   }
 
+  public createManualAttempt(commandId: string, input: Readonly<{ taskId: string; attemptId: string; action: unknown; taskInput: string }>): Readonly<{ attemptId: string; actionDigest: string }> {
+    assertId(input.taskId, "taskId"); assertId(input.attemptId, "attemptId");
+    const parsedAction = parseApprovalAction(input.action);
+    if (!parsedAction.ok) throw new M4Error("INVALID_INPUT", "manual relay action is invalid");
+    const actionJson = bounded(parsedAction.value, M4_LIMITS.maxActionBytes, "action");
+    const actionDigest = digestApprovalAction(parsedAction.value);
+    if (!actionDigest.ok) throw new M4Error("INVALID_INPUT", "manual relay action is invalid");
+    const safeInput = sanitize(input.taskInput, M4_LIMITS.maxTaskInputBytes);
+    if (parsedAction.value.operation !== "worker.dispatch" || parsedAction.value.taskId !== input.taskId || parsedAction.value.attemptId !== input.attemptId || parsedAction.value.target.resourceId !== "manual-relay" || parsedAction.value.parameters.worker.manifestId !== "manual-relay" || parsedAction.value.parameters.worker.manifestVersion !== "1.0.0" || parsedAction.value.parameters.instructionDigest !== sha256(safeInput)) throw new M4Error("STOP_POINT", "only the exact owner-attested manual relay action is authorized for this attempt");
+    return this.database.connection.transaction(() => this.command("m6.manual.attempt", commandId, { taskId: input.taskId, attemptId: input.attemptId, actionDigest: actionDigest.value, taskInputDigest: sha256(safeInput) }, () => {
+      const task = this.task(input.taskId);
+      if (task.state !== "DRAFT" || task.attempt_id !== null) throw new M4Error("CONFLICT", "task cannot accept this initial attempt");
+      this.database.connection.prepare("INSERT INTO task_attempts(attempt_id,task_id,attempt_sequence,action_json,action_digest,input_text,created_at) VALUES(?,?,1,?,?,?,?)").run(input.attemptId, input.taskId, actionJson, actionDigest.value, safeInput, this.now());
+      const updated = this.database.connection.prepare("UPDATE tasks SET attempt_id=?,current_operation_id=?,updated_at=? WHERE task_id=? AND attempt_id IS NULL").run(input.attemptId, parsedAction.value.operationId, this.now(), input.taskId);
+      if (updated.changes !== 1) throw new M4Error("CONFLICT", "attempt was created concurrently");
+      this.appendEvent(`task-${input.taskId}`, "attempt.created", { taskId: input.taskId, attemptId: input.attemptId, actionDigest: actionDigest.value, workerId: "manual-relay", provenance: "owner-attested" });
+      return Object.freeze({ attemptId: input.attemptId, actionDigest: actionDigest.value });
+    }))();
+  }
+
   public transition(taskId: string, expectedVersion: number, request: TransitionRequest): Readonly<{ state: TaskState; version: number }> {
     assertId(taskId, "taskId");
     return this.database.connection.transaction(() => {
@@ -370,6 +390,59 @@ export class M4Orchestrator {
       db.prepare("INSERT INTO m4_assignments(assignment_id,task_id,attempt_id,operation_id,worker_id,status,assignment_json,created_at,updated_at) VALUES(?,?,?,?,?,'pending-approval',?,?,?)").run(input.assignmentId, input.taskId, input.attemptId, action.operationId, M4_LIMITS.codexWorkerId, bounded(assignment, 32_768, "assignment"), at, at);
       this.appendEvent(`task-${input.taskId}`, "assignment.recorded", { taskId: input.taskId, attemptId: input.attemptId, operationId: action.operationId, assignmentId: input.assignmentId, workerId: M4_LIMITS.codexWorkerId, scopeHash: scope.scopeHash, leaseId: input.leaseId, readinessSnapshotRef: input.readinessSnapshotRef });
       return Object.freeze({ assignmentId: input.assignmentId, leaseId: input.leaseId, scopeId: scope.scopeId, scopeHash: scope.scopeHash });
+    }))();
+  }
+
+  public startManualRelay(commandId: string, input: Readonly<{ taskId: string; attemptId: string; assignmentId: string; ownerId: string; expiresAt: string }>): Readonly<{ assignmentId: string; state: "RUNNING"; version: number }> {
+    for (const [label, value] of Object.entries(input)) if (label !== "expiresAt") assertId(value, label);
+    return this.database.connection.transaction(() => this.command("m6.manual.start", commandId, input, () => {
+      const task = this.task(input.taskId); const attempt = this.attempt(input.attemptId);
+      if (task.state !== "AWAITING_DISPATCH" || task.attempt_id !== input.attemptId || attempt.task_id !== input.taskId) throw new M4Error("STOP_POINT", "manual relay task is not awaiting owner-confirmed start");
+      const action = JSON.parse(attempt.action_json) as ApprovalAction;
+      if (action.operation !== "worker.dispatch" || action.target.resourceId !== "manual-relay") throw new M4Error("STOP_POINT", "attempt is not a manual relay action");
+      if (!Number.isFinite(Date.parse(input.expiresAt)) || Date.parse(input.expiresAt) <= Date.parse(this.now())) throw new M4Error("INVALID_INPUT", "manual relay assignment expiry is invalid");
+      const assignment: Assignment = {
+        coordinationVersion: "1.0", kind: "owner-confirmed", assignmentId: input.assignmentId, taskId: input.taskId, attemptId: input.attemptId, operationId: action.operationId,
+        projectId: task.project_id, workerId: "manual-relay", adapterId: "manual-relay", requiredCapabilities: ["text-output"], permittedConnectorTier: "manual-relay",
+        writeScopeRef: null, leaseRequired: false, readinessSnapshotRef: "readiness-manual-relay", quotaSnapshotRef: null, approvalGrantRef: null,
+        expectedEvidenceRefs: ["owner-attestation"], expiresAt: input.expiresAt, rationaleEvidenceRefs: [`rationale-${input.assignmentId}`], ownerApprovalRef: `owner-${input.ownerId}`,
+      };
+      if (!parseAssignment(assignment).ok) throw new M4Error("INVALID_INPUT", "manual relay assignment is invalid");
+      const at = this.now();
+      this.database.connection.prepare("INSERT INTO m4_assignments(assignment_id,task_id,attempt_id,operation_id,worker_id,status,assignment_json,created_at,updated_at) VALUES(?,?,?,?,?,'manual-active',?,?,?)").run(input.assignmentId, input.taskId, input.attemptId, action.operationId, "manual-relay", bounded(assignment, 32_768, "assignment"), at, at);
+      // M1A names the connector-start acknowledgement "bridge-dispatch-ack" for every
+      // connector tier. For manual relay it records only that the owner-confirmed
+      // relay transport is active; it is not represented as automated execution.
+      const running = this.transition(input.taskId, task.version, { to: "RUNNING", actor: "control-plane", evidence: ["bridge-dispatch-ack"] });
+      this.appendEvent(`task-${input.taskId}`, "manual-relay.started", { taskId: input.taskId, attemptId: input.attemptId, operationId: action.operationId, assignmentId: input.assignmentId, provenance: "owner-attested", assurance: "weaker-manual" });
+      return Object.freeze({ assignmentId: input.assignmentId, state: "RUNNING" as const, version: running.version });
+    }))();
+  }
+
+  public recordManualTextResult(commandId: string, input: Readonly<{ taskId: string; attemptId: string; operationId: string; expectedVersion: number; ownerId: string; resultRef: string; responseType: "text" | "review" | "design"; text: string; attestationId: string }>): Readonly<{ resultRef: string; state: "AWAITING_APPROVAL"; version: number }> {
+    for (const [label, value] of Object.entries(input)) if (label !== "expectedVersion" && label !== "text" && label !== "responseType") assertId(String(value), label);
+    const safeText = sanitize(input.text, M4_LIMITS.maxResultBytes);
+    return this.database.connection.transaction(() => this.command("m6.manual.result", commandId, { ...input, text: safeText }, () => {
+      const task = this.task(input.taskId);
+      if (task.version !== input.expectedVersion) throw new M4Error("STALE_VERSION", "task version is stale");
+      if (task.state !== "RUNNING" || task.attempt_id !== input.attemptId || task.current_operation_id !== input.operationId) throw new M4Error("CONFLICT", "manual result does not match the active immutable attempt");
+      const assignment = this.database.connection.prepare("SELECT assignment_json,status FROM m4_assignments WHERE task_id=? AND attempt_id=? AND operation_id=? AND worker_id='manual-relay'").get(input.taskId, input.attemptId, input.operationId) as { assignment_json: string; status: string } | undefined;
+      if (!assignment || assignment.status !== "manual-active") throw new M4Error("STOP_POINT", "manual relay assignment is not active");
+      const assigned = parseAssignment(JSON.parse(assignment.assignment_json));
+      if (!assigned.ok || assigned.value.adapterId !== "manual-relay" || Date.parse(this.now()) >= Date.parse(assigned.value.expiresAt)) throw new M4Error("STOP_POINT", "manual relay assignment is invalid or expired");
+      const at = this.now();
+      const result = Object.freeze({
+        resultRef: input.resultRef, taskId: input.taskId, attemptId: input.attemptId, operationId: input.operationId, responseType: input.responseType,
+        text: safeText, provenance: "owner-attested manual relay" as const, assurance: "weaker-manual" as const, workerClaim: true,
+        attestation: { attestationId: input.attestationId, ownerId: input.ownerId, authenticated: true as const, attestedAt: at, selectedImportMode: "text" as const },
+        appliedToProject: false as const, appliedToWorktree: false as const,
+      });
+      this.database.connection.prepare("INSERT INTO m6_manual_results(result_ref,task_id,attempt_id,operation_id,result_digest,result_json,recorded_at) VALUES(?,?,?,?,?,?,?)").run(input.resultRef, input.taskId, input.attemptId, input.operationId, sha256(canonical(result)), bounded(result, M4_LIMITS.maxResultBytes, "manual result"), at);
+      this.database.connection.prepare("UPDATE m4_assignments SET status='manual-completed',updated_at=? WHERE task_id=? AND attempt_id=? AND operation_id=? AND status='manual-active'").run(at, input.taskId, input.attemptId, input.operationId);
+      const captured = this.transition(input.taskId, task.version, { to: "RESULT_CAPTURED", actor: "control-plane", evidence: ["bridge-execution-report"] });
+      const awaiting = this.transition(input.taskId, captured.version, { to: "AWAITING_APPROVAL", actor: "control-plane" });
+      this.appendEvent(`task-${input.taskId}`, "manual-relay.result-recorded", { taskId: input.taskId, attemptId: input.attemptId, operationId: input.operationId, resultRef: input.resultRef, provenance: "owner-attested", assurance: "weaker-manual", workerClaim: true });
+      return Object.freeze({ resultRef: input.resultRef, state: "AWAITING_APPROVAL" as const, version: awaiting.version });
     }))();
   }
 

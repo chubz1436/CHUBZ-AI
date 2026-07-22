@@ -8,6 +8,7 @@
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
+    "build": "tsc --noEmit",
     "test:real-m5": "tsx scripts/m5-real-canary.ts"
   },
   "dependencies": {

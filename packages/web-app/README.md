@@ -1,7 +1,7 @@
-# Web App
+# Web App (M6)
 
-> **STATUS: PLANNED — NOT YET IMPLEMENTED**
+The local React/Vite client is served by the Control Plane after `pnpm build`. It provides the authenticated M6 command chat, authoritative Kanban projection, task and immutable-attempt detail, protected owner actions, adapter readiness, manual-relay warnings and text attestation, and WebSocket cursor recovery.
 
-Placeholder for the future web control panel. It is planned to provide chat-first control, automation status, slash commands, worker and task views, approval prompts, response/diff review, conflict warnings, and Bridge Log access.
+The client is never a source of task truth. It reloads persisted server snapshots, ignores older task versions, renders worker content as plain escaped text, and leaves unsupported Bridge-dependent readiness and artifact operations visibly unavailable.
 
-No framework or application code has been initialized.
+Development: `pnpm --filter @chubz/web-app build`, `test`, `typecheck`, or `lint`.
