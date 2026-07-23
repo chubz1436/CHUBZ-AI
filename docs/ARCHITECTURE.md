@@ -1,5 +1,7 @@
 # Architecture
 
+> **M8 candidate note (2026-07-23):** Control Plane SQLite state and the independent Local Bridge operation journal remain authoritative. Bridge Log Markdown is a bounded, sanitized, rebuildable projection only. Persistent recovery incidents describe operational uncertainty without creating execution authority. Global/project emergency stops are authoritative Control Plane state and are rechecked by the outbound-only Bridge immediately before process spawn. Release never auto-resumes or retries blocked work. See [M8_RECOVERY_AND_EMERGENCY_CONTROLS.md](M8_RECOVERY_AND_EMERGENCY_CONTROLS.md).
+
 > **M7 STATUS:** M1A-M6 are accepted; the M7 runtime evidence and review-package candidate is active and unaccepted.
 
 ## M7 authority split

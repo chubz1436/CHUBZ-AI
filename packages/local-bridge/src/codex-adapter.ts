@@ -179,7 +179,7 @@ export async function inspectCodexWorktree(input: Readonly<{ worktreePath: strin
 }
 
 export type CodexAdapterRequest = Readonly<{
-  taskId: string; attemptId: string; operationId: string; adapterRunId: string;
+  taskId: string; attemptId: string; operationId: string; adapterRunId: string; projectId?: string;
   taskInstructions: string;
   executablePath: string;
   worktreePath: string;
@@ -277,7 +277,7 @@ export class CodexCliAdapter {
     const args = buildCodexInvocationArgs({ mode: request.mode, windowsSandboxImplementation: request.windowsSandboxImplementation, outputSchemaPath: request.outputSchemaPath, worktreePath: worktree });
     if (args.some((arg) => arg === request.taskInstructions || arg.includes("\0"))) throw new Error("task instructions must not enter argv");
     const startedAt = new Date().toISOString();
-    const processResult = await this.supervisor.run({ executable: request.executablePath, args, cwd: worktree, env: sanitizedEnvironment(codexHome), taskContent: request.taskInstructions, role: "worker", timeoutMs: request.timeoutMs, terminationDeadlineMs: request.terminationDeadlineMs, maxOutputBytes: CODEX_ADAPTER_LIMITS.maxStdoutBytes, signal: request.signal });
+    const processResult = await this.supervisor.run({ executable: request.executablePath, args, cwd: worktree, env: sanitizedEnvironment(codexHome), taskContent: request.taskInstructions, role: "worker", timeoutMs: request.timeoutMs, terminationDeadlineMs: request.terminationDeadlineMs, maxOutputBytes: CODEX_ADAPTER_LIMITS.maxStdoutBytes, emergencyScope: request.projectId === undefined ? undefined : { projectId: request.projectId, operationId: request.operationId }, signal: request.signal });
     const parsed = processResult.stdoutTruncated || processResult.stderrTruncated ? Object.freeze({ ok: false as const, reason: "TRUNCATED_OUTPUT" as const, events: [] as readonly NormalizedCodexEvent[] }) : normalizeProviderEvents(processResult.stdout);
     const gitInspection = await inspectCodexWorktree({ worktreePath: worktree, baseline, writeScope: request.writeScope });
     const silentlyReadOnly = request.mode === "workspace-write" && /(?:read-only (?:filesystem|sandbox|policy)|writing is blocked by read-only sandbox|rejected: blocked by policy)/iu.test(`${processResult.stdout}\n${processResult.stderr}`);

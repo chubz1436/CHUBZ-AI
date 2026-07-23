@@ -1,16 +1,14 @@
 # Active Tasks
 
-> **M7 STATUS (2026-07-22):** M1A-M6 are accepted on `main` at `00904342a685d20eb1f7b9566e9634aa49e9287f`. The owner authorized the bounded M7 evidence-capture and immutable review-package milestone on `task/m7-capture-review-packages`. M7 remains unaccepted pending independent read-only review and owner acceptance. M8 and later remain unauthorized.
+> **M8 STATUS (2026-07-23):** M1A-M7 are accepted on `main` at `6e1d206ce36b31a4909fcdae09a63b7e6ddd4136`. The owner authorized the bounded M8 Bridge Log, recovery/reconciliation, and global/project emergency-stop candidate on `task/m8-bridge-log-recovery-emergency-stop`. M8 is active and unaccepted pending independent read-only review and owner acceptance. M9 and later remain unauthorized. See [M8_RECOVERY_AND_EMERGENCY_CONTROLS.md](M8_RECOVERY_AND_EMERGENCY_CONTROLS.md).
 
-> **STATUS: M1A-M6 ACCEPTED; M7 AUTHORITATIVE EVIDENCE AND REVIEW-PACKAGE CANDIDATE ACTIVE, LOCAL-ONLY, AND UNACCEPTED.**
+> **CURRENT STATUS: M1A-M7 ACCEPTED; M8 RECOVERY AND EMERGENCY-CONTROL CANDIDATE ACTIVE, LOCAL-ONLY, AND UNACCEPTED.**
 
-M7 establishes persistent idempotent capture requests in the Control Plane; independently observed managed-worktree Git, bounded diff, process, test/build/runtime, readiness, sandbox, cancellation, and terminal-state evidence at the outbound-only Local Bridge; canonical immutable hash-verifiable packages; restart reconciliation; protected status/verify/download APIs and events; and a read-only evidence panel in the accepted M6 UI. Worker claims and owner-attested manual evidence remain explicitly separate from system observation. See [M7_EVIDENCE_AND_REVIEW_PACKAGES.md](M7_EVIDENCE_AND_REVIEW_PACKAGES.md). Bridge Log/Obsidian projection, recovery controls, apply/integration, routing, deployment, and remote access remain M8+.
+M8 adds a rebuildable non-authoritative Bridge Log projection, persistent evidence-backed incidents, restart reconciliation that preserves at-most-once execution, and owner-gated global/project emergency stops enforced before Bridge process spawn. It does not add M9 apply or owner-project mutation.
 
 > **M6 ACCEPTANCE (2026-07-22):** The bounded local-only web chat and Kanban milestone independently passed, was owner-accepted, merged, and pushed on `main` at `00904342a685d20eb1f7b9566e9634aa49e9287f`.
 
 > **M5 COMPLETION (2026-07-22):** The Codex CLI adapter and owner-attested manual relay independently passed, were owner-accepted, merged, and pushed on `main` at `3e926486f03223ee93591ca0822568217a26eb2b`.
-
-> **STATUS: M1A-M6 ACCEPTED; M7 EVIDENCE AND REVIEW-PACKAGE CANDIDATE ACTIVE, LOCAL-ONLY, AND UNACCEPTED.**
 
 ## Project lifecycle status
 
@@ -28,7 +26,8 @@ M7 establishes persistent idempotent capture requests in the Control Plane; inde
 12. **Completed and accepted** — M4 Orchestrator and Capability Grants independently passed, was owner-accepted, merged, and pushed on `main` at `2a6c678ca6b4cc107aacb3bd2f81910609c4ad8d`.
 13. **Completed and accepted** — M5 Codex CLI Adapter and Manual Relay, accepted on `main` at `3e926486f03223ee93591ca0822568217a26eb2b`.
 14. **Completed and accepted** — M6 Web Chat and Kanban UI, accepted on `main` at `00904342a685d20eb1f7b9566e9634aa49e9287f`.
-15. **Active and unaccepted** — M7 authoritative evidence capture and immutable review packages on `task/m7-capture-review-packages`; independent read-only review and separate owner acceptance remain required.
+15. **Completed and accepted** — M7 authoritative evidence capture and immutable review packages, accepted on `main` at `6e1d206ce36b31a4909fcdae09a63b7e6ddd4136`.
+16. **Active and unaccepted** — M8 Bridge Log projection, operational recovery/reconciliation, and global/project emergency stop on `task/m8-bridge-log-recovery-emergency-stop`; independent read-only review and separate owner acceptance remain required.
 
 Earlier project bootstrap and worker onboarding (Codex, BUNSO, Antigravity) are complete and precede item 1.
 
@@ -59,9 +58,9 @@ Deferred owner inputs (not blockers, per D-022): the Obsidian vault path (U-7) r
 
 M1A Core Contracts and M1B Protocol Contracts are completed and merged into `main`.
 
-**M1A through M6 are complete and accepted.** M7 has explicit owner GO only for the bounded local-only evidence-capture and review-package candidate on `task/m7-capture-review-packages`; it remains unaccepted. Codex CLI is the first automated connector and manual relay remains the universal owner-attested fallback. M8 and later remain unauthorized.
+**M1A through M7 are complete and accepted.** M8 has explicit owner GO only for the bounded local-only recovery and emergency-control candidate on `task/m8-bridge-log-recovery-emergency-stop`; it remains unaccepted. Codex CLI is the first automated connector and manual relay remains the universal owner-attested fallback. M9 and later remain unauthorized.
 
-Nothing in this file authorizes owner-project integration, domain or tunnel configuration, server access, MikroTik access, deployment, infrastructure change, production action, or M8+ work.
+Nothing in this file authorizes owner-project integration, domain or tunnel configuration, server access, MikroTik access, deployment, infrastructure change, production action, or M9+ work.
 
 ## M1D acceptance record
 

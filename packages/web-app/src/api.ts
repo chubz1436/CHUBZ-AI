@@ -31,3 +31,7 @@ export const login = (username: string, password: string): Promise<{ csrfToken: 
 export const logout = (): Promise<null> => request("/v1/auth/logout", { method: "POST", body: "{}" });
 export const createTask = (body: Record<string, unknown>): Promise<Record<string, unknown>> => request("/v1/ui/tasks", { method: "POST", body: JSON.stringify(body) });
 export const mutateTask = (taskId: string, action: "approve-dispatch" | "cancel" | "decision" | "manual-text" | "manual-artifacts" | "captures", body: Record<string, unknown>): Promise<Record<string, unknown>> => request(`/v1/ui/tasks/${encodeURIComponent(taskId)}/${action}`, { method: "POST", body: JSON.stringify(body) });
+export const activateEmergencyStop = (body: Record<string, unknown>): Promise<Record<string, unknown>> => request("/v1/ui/emergency-stops", { method: "POST", body: JSON.stringify(body) });
+export const releaseEmergencyStop = (stopId: string, body: Record<string, unknown>): Promise<Record<string, unknown>> => request(`/v1/ui/emergency-stops/${encodeURIComponent(stopId)}/release`, { method: "POST", body: JSON.stringify(body) });
+export const rebuildBridgeLog = (body: Record<string, unknown>): Promise<Record<string, unknown>> => request("/v1/ui/bridge-log/rebuild", { method: "POST", body: JSON.stringify(body) });
+export const acknowledgeIncident = (incidentId: string, body: Record<string, unknown>): Promise<Record<string, unknown>> => request(`/v1/ui/recovery-incidents/${encodeURIComponent(incidentId)}/acknowledge`, { method: "POST", body: JSON.stringify(body) });

@@ -9,3 +9,4 @@ export * from "./adapter-registry.js";
 export * from "./codex-adapter.js";
 export * from "./manual-relay.js";
 export * from "./codex-bridge.js";
+export * from "./emergency-stop.js";

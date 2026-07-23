@@ -72,7 +72,7 @@ type TaskRow = {
 type AttemptRow = { attempt_id: string; attempt_sequence: number; action_json: string; action_digest: string; input_text: string; created_at: string };
 
 export class M6UiService {
-  public constructor(private readonly database: ControlPlaneDatabase, private readonly orchestrator: M4Orchestrator, private readonly captureProjector?: (principal: Principal, taskId: string) => readonly Record<string, unknown>[]) {}
+  public constructor(private readonly database: ControlPlaneDatabase, private readonly orchestrator: M4Orchestrator, private readonly captureProjector?: (principal: Principal, taskId: string) => readonly Record<string, unknown>[], private readonly executionGate?: (projectId: string) => void) {}
 
   private mutation<T>(scope: string, idempotencyKey: string, request: unknown, execute: () => T): T {
     const requestDigest = sha256(canonical(request));
@@ -248,6 +248,7 @@ export class M6UiService {
     return this.mutation(`dispatch.approve:${taskId}`, idempotencyKey, { ownerId: principal.administratorId, taskId, expectedVersion }, () => {
       const task = this.task(taskId);
       if (task.version !== expectedVersion) throw new M6Error("STALE_STATE", "task version is stale");
+      this.executionGate?.(task.project_id);
       if (task.state !== "AWAITING_DISPATCH" || task.attempt_id === null || task.current_operation_id === null) throw new M6Error("CONFLICT", "task is not awaiting dispatch approval");
       const binding = this.database.connection.prepare("SELECT a.assignment_id,a.worker_id,a.status,a.assignment_json,s.scope_hash FROM m4_assignments a JOIN m4_write_scopes s ON s.task_id=a.task_id AND s.attempt_id=a.attempt_id AND s.operation_id=a.operation_id WHERE a.task_id=? AND a.attempt_id=? AND a.operation_id=?").get(taskId, task.attempt_id, task.current_operation_id) as { assignment_id: string; worker_id: string; status: string; assignment_json: string; scope_hash: string } | undefined;
       const attempt = this.database.connection.prepare("SELECT action_digest FROM task_attempts WHERE attempt_id=?").get(task.attempt_id) as { action_digest: string } | undefined;

@@ -269,6 +269,126 @@ const migrations: readonly Migration[] = [
       PRIMARY KEY(mutation_scope, idempotency_key)
     );
   ` },
+  { version: 8, sql: `
+    CREATE TABLE m8_operational_events (
+      sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id TEXT NOT NULL UNIQUE,
+      event_kind TEXT NOT NULL,
+      owner_id TEXT,
+      project_id TEXT,
+      task_id TEXT,
+      attempt_id TEXT,
+      operation_id TEXT,
+      source TEXT NOT NULL,
+      actor_category TEXT NOT NULL,
+      old_state TEXT,
+      new_state TEXT,
+      summary TEXT NOT NULL,
+      details_json TEXT NOT NULL DEFAULT '{}',
+      event_digest TEXT NOT NULL UNIQUE,
+      occurred_at TEXT NOT NULL
+    );
+    CREATE INDEX m8_events_project_sequence_idx ON m8_operational_events(project_id, sequence);
+
+    CREATE TABLE m8_projection_state (
+      projection_id INTEGER PRIMARY KEY CHECK(projection_id = 1),
+      schema_version TEXT NOT NULL,
+      cursor_sequence INTEGER NOT NULL DEFAULT 0 CHECK(cursor_sequence >= 0),
+      projected_event_count INTEGER NOT NULL DEFAULT 0 CHECK(projected_event_count >= 0),
+      status TEXT NOT NULL CHECK(status IN ('empty','current','gap','tampered','failed','rebuilding')),
+      file_digest TEXT,
+      verified_at TEXT,
+      rebuilt_at TEXT,
+      failure_reason TEXT,
+      version INTEGER NOT NULL DEFAULT 0
+    );
+    INSERT INTO m8_projection_state(projection_id,schema_version,status) VALUES(1,'m8.bridge-log/v1','empty');
+
+    CREATE TABLE m8_recovery_incidents (
+      incident_id TEXT PRIMARY KEY,
+      owner_id TEXT,
+      project_id TEXT,
+      task_id TEXT,
+      attempt_id TEXT,
+      operation_id TEXT,
+      condition TEXT NOT NULL,
+      evidence_json TEXT NOT NULL,
+      severity TEXT NOT NULL CHECK(severity IN ('info','warning','high','critical')),
+      first_detected_at TEXT NOT NULL,
+      latest_detected_at TEXT NOT NULL,
+      resolution_state TEXT NOT NULL CHECK(resolution_state IN ('open','acknowledged','reviewed','resolved','closed')),
+      allowed_actions_json TEXT NOT NULL,
+      blocked_actions_json TEXT NOT NULL,
+      related_refs_json TEXT NOT NULL,
+      notes TEXT NOT NULL,
+      resolution_provenance_json TEXT,
+      version INTEGER NOT NULL DEFAULT 0,
+      UNIQUE(condition, project_id, task_id, attempt_id, operation_id)
+    );
+    CREATE INDEX m8_incidents_owner_state_idx ON m8_recovery_incidents(owner_id, resolution_state, latest_detected_at);
+
+    CREATE TABLE m8_emergency_stops (
+      stop_id TEXT PRIMARY KEY,
+      scope_type TEXT NOT NULL CHECK(scope_type IN ('global','project')),
+      project_id TEXT,
+      owner_id TEXT NOT NULL REFERENCES administrators(id),
+      reason TEXT NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('active','released')),
+      activated_at TEXT NOT NULL,
+      released_at TEXT,
+      released_by TEXT REFERENCES administrators(id),
+      version INTEGER NOT NULL DEFAULT 1,
+      CHECK((scope_type='global' AND project_id IS NULL) OR (scope_type='project' AND project_id IS NOT NULL))
+    );
+    CREATE UNIQUE INDEX m8_one_active_global_stop ON m8_emergency_stops(scope_type) WHERE status='active' AND scope_type='global';
+    CREATE UNIQUE INDEX m8_one_active_project_stop ON m8_emergency_stops(project_id) WHERE status='active' AND scope_type='project';
+    CREATE TABLE m8_emergency_state (
+      scope_key TEXT PRIMARY KEY,
+      version INTEGER NOT NULL DEFAULT 0 CHECK(version >= 0),
+      updated_at TEXT NOT NULL
+    );
+    INSERT INTO m8_emergency_state(scope_key,version,updated_at) VALUES('global',0,CURRENT_TIMESTAMP);
+
+    CREATE TABLE m8_stop_operations (
+      stop_id TEXT NOT NULL REFERENCES m8_emergency_stops(stop_id),
+      operation_id TEXT NOT NULL,
+      task_id TEXT NOT NULL REFERENCES tasks(task_id),
+      cancellation_state TEXT NOT NULL CHECK(cancellation_state IN ('blocked-before-start','requested','confirmed','failed','uncertain')),
+      requested_at TEXT,
+      updated_at TEXT NOT NULL,
+      evidence_json TEXT NOT NULL,
+      PRIMARY KEY(stop_id, operation_id)
+    );
+
+    CREATE TABLE m8_reconciliation_runs (
+      run_id TEXT PRIMARY KEY,
+      trigger_kind TEXT NOT NULL CHECK(trigger_kind IN ('control-plane-start','bridge-start','owner-request')),
+      status TEXT NOT NULL CHECK(status IN ('running','completed','completed-with-incidents','failed')),
+      started_at TEXT NOT NULL,
+      completed_at TEXT,
+      summary_json TEXT NOT NULL,
+      run_digest TEXT
+    );
+
+    CREATE TABLE m8_bridge_state (
+      bridge_id TEXT PRIMARY KEY,
+      connection_state TEXT NOT NULL CHECK(connection_state IN ('connected','disconnected','unknown')),
+      last_seen_at TEXT,
+      executable_provenance_digest TEXT,
+      updated_at TEXT NOT NULL,
+      version INTEGER NOT NULL DEFAULT 0
+    );
+    INSERT INTO m8_bridge_state(bridge_id,connection_state,updated_at) VALUES('local-bridge','unknown',CURRENT_TIMESTAMP);
+
+    CREATE TABLE m8_mutations (
+      mutation_scope TEXT NOT NULL,
+      idempotency_key TEXT NOT NULL,
+      request_digest TEXT NOT NULL,
+      result_json TEXT,
+      recorded_at TEXT NOT NULL,
+      PRIMARY KEY(mutation_scope,idempotency_key)
+    );
+  ` },
 ];
 const checksum = (sql: string): string => createHash("sha256").update(sql).digest("hex");
 export class MigrationError extends Error { constructor() { super("Control Plane database migration failed."); this.name = "MigrationError"; } }

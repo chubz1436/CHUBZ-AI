@@ -14,6 +14,7 @@ import { buildCodexInvocationArgs, CodexCliAdapter, isBoundedFallbackEvidence, t
 import type { CodexProbeEvidence, WindowsSandboxImplementation } from "./adapter-registry.js";
 import { EvidenceCaptureService, type ReviewCaptureRequest } from "./evidence-capture.js";
 import { OperationJournal } from "./journal.js";
+import type { EmergencyStopGate } from "./emergency-stop.js";
 
 const WORKER_ID = "codex-cli" as const;
 const ADAPTER_ID = "codex-cli-adapter" as const;
@@ -71,6 +72,7 @@ export class CodexBridge {
     private readonly verifier: GrantAuthenticationVerifier,
     private readonly adapter: CodexCliAdapter,
     private readonly now: () => Date = () => new Date(),
+    private readonly emergencyGate?: EmergencyStopGate,
   ) {}
 
   private assertOpen(): void { if (this.closed) throw new Error("Codex bridge is closed"); }
@@ -110,6 +112,7 @@ export class CodexBridge {
 
   public execute(command: CodexDispatchCommand, context: CodexExecutionContext, options: CodexBridgeOptions = {}): Promise<CodexBridgeResult> {
     try { this.assertOpen(); } catch (error) { return Promise.reject(error); }
+    try { this.emergencyGate?.assertAllowed(command.projectId); } catch (error) { return Promise.reject(error); }
     let verified: ReturnType<CodexBridge["verify"]>;
     try { verified = this.verify(command, context); } catch (error) { return Promise.reject(error); }
     const existing = this.inFlight.get(command.operationId);
@@ -132,7 +135,7 @@ export class CodexBridge {
       return result;
     }
     const outcome = await this.adapter.run({
-      taskId: command.taskId, attemptId: command.attemptId, operationId: command.operationId, adapterRunId: command.assignment.kind === "dispatched" ? command.assignment.adapterRunId : `run-${command.grant.grantId}`,
+      taskId: command.taskId, attemptId: command.attemptId, operationId: command.operationId, projectId: command.projectId, adapterRunId: command.assignment.kind === "dispatched" ? command.assignment.adapterRunId : `run-${command.grant.grantId}`,
       taskInstructions: command.taskInput, executablePath: context.executablePath, worktreePath: context.worktreePath, managedWorktreeRoot: context.managedWorktreeRoot, codexHome: context.codexHome, managedDataRoot: context.managedDataRoot,
       outputSchemaPath: context.outputSchemaPath, mode: command.writeScope.permissions.create || command.writeScope.permissions.modify || command.writeScope.permissions.delete ? "workspace-write" : "read-only", windowsSandboxImplementation: context.windowsSandboxImplementation,
       writeScope: command.writeScope, readiness: command.readiness, provenance: context.provenance, timeoutMs: command.action.constraints.timeoutSec * 1_000, terminationDeadlineMs: 10_000, signal: options.signal,

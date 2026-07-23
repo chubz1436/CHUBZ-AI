@@ -1,5 +1,7 @@
 # Security and Threat Model
 
+> **M8 candidate clarification (2026-07-23):** Web emergency-stop activation and release require the authenticated sole administrator, strict Origin, CSRF, idempotency, owner/project binding, and current scope version. “Owner-initiated and never approval-gated” below means no worker grant is required; it does not mean unauthenticated. Activation persists before it is authoritative, fails closed when the Bridge is unavailable, revokes unconsumed queued authority, and requests cancellation without claiming success. The outbound-only Bridge serializes its final pre-spawn check with stop activation. Release is explicit and never auto-resumes work.
+
 > **STATUS: ACCEPTED ARCHITECTURE (2026-07-10 through D-027) — CONTRACT FOUNDATIONS ONLY; RUNTIME NOT YET IMPLEMENTED**
 >
 > Author: Claude Code / BUNSO (Fable 5), per accepted decision D-005.

@@ -8,6 +8,7 @@ export * from "./database.js";
 export * from "./grant-engine.js";
 export * from "./m6-ui.js";
 export * from "./m7-review.js";
+export * from "./m8-operations.js";
 export * from "./orchestrator.js";
 
 if (process.argv[1]?.endsWith("index.ts")) {

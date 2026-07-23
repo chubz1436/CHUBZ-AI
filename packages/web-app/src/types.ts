@@ -22,9 +22,15 @@ export type Snapshot = {
   bridge: { availability: string; connected: boolean; lastSeenAt: string | null; reason: string };
   cursor: { streamId: string; lastConsumedSequence: number; oldestRetainedSequence: number };
   tasks: Task[]; adapters: Adapter[]; workers: Array<Record<string, unknown>>;
+  operations: {
+    projection: { schemaVersion: string; cursor: number; entryCount: number; status: string; verifiedAt: string | null; rebuiltAt: string | null; failureReason: string | null; version: number; authoritative: false; editable: false };
+    bridge: { availability: string; connected: boolean; lastSeenAt: string | null; failClosed: boolean };
+    emergency: { active: boolean; scopeVersions: Record<string, number>; stops: Array<Record<string, unknown>> };
+    incidents: Array<Record<string, unknown>>; entries: Array<Record<string, unknown>>; reconciliation: Record<string, unknown> | null;
+  };
   manualRelay: { available: boolean; provenance: string; assurance: string; automatedExecution: false; artifactTransportAvailable: boolean; allowedArtifactTypes: string[]; appliedToProject: false; appliedToWorktree: false };
 };
 
 export type ApiError = Error & { status?: number; code?: string };
 export type ConnectionState = "connecting" | "live" | "disconnected" | "resynchronizing";
-export type Page = "chat" | "board" | "adapters";
+export type Page = "chat" | "board" | "adapters" | "operations";

@@ -43,7 +43,7 @@ type PackageRow = { package_id: string; capture_id: string; owner_id: string; pr
 export class M7ReviewService {
   private readonly packageRoot: string;
   private transitionPublisher: ((taskId: string, eventKind: string) => void) | undefined;
-  public constructor(private readonly database: ControlPlaneDatabase, config: ControlPlaneConfig) {
+  public constructor(private readonly database: ControlPlaneDatabase, config: ControlPlaneConfig, private readonly executionGate?: (projectId: string) => void) {
     this.packageRoot = resolve(config.dataDirectory, "review-packages");
     const approvedOperationalRoot = resolve("B:\\AI_Agent_folder"); if (config.environment !== "test" && !contained(approvedOperationalRoot, config.dataDirectory)) throw new Error("M7 managed data must remain beneath the approved operational root");
     if (!contained(config.dataDirectory, this.packageRoot) || canonicalPath(config.dataDirectory) === canonicalPath(this.packageRoot)) throw new Error("review package root escaped managed data");
@@ -69,6 +69,7 @@ export class M7ReviewService {
     return this.mutation(`capture.request:${principal.administratorId}:${taskId}`, key, { taskId, expectedVersion }, () => {
       const task = this.database.connection.prepare("SELECT project_id,state,attempt_id,current_operation_id,version FROM tasks WHERE task_id=?").get(taskId) as { project_id: string; state: string; attempt_id: string | null; current_operation_id: string | null; version: number } | undefined;
       if (!task) throw new M6Error("NOT_FOUND", "task was not found"); if (task.version !== expectedVersion) throw new M6Error("STALE_STATE", "task version is stale");
+      this.executionGate?.(task.project_id);
       if (task.attempt_id === null || task.current_operation_id === null || !["RESULT_CAPTURED", "AWAITING_APPROVAL", "APPROVED", "REJECTED", "FAILED", "CANCELLED", "BLOCKED", "COMPLETED"].includes(task.state)) throw new M6Error("CONFLICT", "attempt is not eligible for evidence capture");
       const attempt = this.database.connection.prepare("SELECT action_digest,action_json FROM task_attempts WHERE attempt_id=? AND task_id=?").get(task.attempt_id, taskId) as { action_digest: string; action_json: string } | undefined;
       const assignment = this.database.connection.prepare("SELECT worker_id,assignment_json FROM m4_assignments WHERE task_id=? AND attempt_id=? AND operation_id=? ORDER BY created_at DESC LIMIT 1").get(taskId, task.attempt_id, task.current_operation_id) as { worker_id: string; assignment_json: string } | undefined;

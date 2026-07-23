@@ -1,5 +1,7 @@
 # CHUBZ AI Command Center
 
+> M8 implementation candidate active (2026-07-23): M1A-M7 are accepted on `main` at `6e1d206ce36b31a4909fcdae09a63b7e6ddd4136`. The current branch adds bounded Bridge Log projection, recovery/reconciliation visibility, and owner-gated global/project emergency stops. M8 is not accepted until independent read-only review and owner acceptance; M9+ is not authorized.
+
 > **STATUS: M1A-M6 ACCEPTED; M7 EVIDENCE CAPTURE AND REVIEW-PACKAGE CANDIDATE ACTIVE, LOCAL-ONLY, AND UNACCEPTED**
 
 CHUBZ AI Command Center is a local-first AI command ecosystem. M6 provides the accepted local interaction surface; M7 adds authoritative managed-worktree Git/process evidence and immutable sanitized review packages without applying changes to owner projects. Remote access remains a later, separately gated phase.

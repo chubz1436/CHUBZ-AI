@@ -18,3 +18,12 @@ describe("M7 evidence surface", () => {
     expect(app).toContain("Incomplete or bounded evidence"); expect(app).toContain("StatusPill"); expect(styles).toContain(".button-link:focus-visible"); expect(styles).toContain("@media (max-width: 620px)");
   });
 });
+
+describe("M8 operations surface", () => {
+  it("exposes prominent truthful stop, uncertainty, projection, and recovery controls without unsafe authority", () => {
+    const app = readFileSync(new URL("./App.tsx", import.meta.url), "utf8"); const styles = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
+    expect(app).toContain("Emergency stop active"); expect(app).toContain("Activate global stop"); expect(app).toContain("Activate project stop"); expect(app).toContain("Cancellation remains uncertain"); expect(app).toContain("release never auto-resumes work"); expect(app).toContain("Rebuild projection"); expect(app).toContain("Acknowledge incident"); expect(app).toContain("Non-authoritative");
+    expect(app).toContain("window.confirm"); expect(app).toContain("window.prompt"); expect(app).toContain("disabled={pending}"); expect(app).not.toContain("Force success"); expect(app).not.toContain("Edit database"); expect(app).not.toContain("Retry execution-unknown");
+    expect(styles).toContain(".emergency-panel.active"); expect(styles).toContain("@media (max-width: 800px)");
+  });
+});

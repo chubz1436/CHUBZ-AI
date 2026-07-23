@@ -16,9 +16,10 @@ import { ControlPlaneDatabase } from "./database.js";
 import { Phase1GrantKey } from "./grant-engine.js";
 import { M6UiService, mapM6Error } from "./m6-ui.js";
 import { M7ReviewService } from "./m7-review.js";
+import { M8OperationsService } from "./m8-operations.js";
 import { M4Orchestrator } from "./orchestrator.js";
 
-export type ControlPlane = Readonly<{ app: FastifyInstance; database: ControlPlaneDatabase; auth: AuthService; review: M7ReviewService; close: () => Promise<void>; emitEvent: (streamId: string, message: ControlPlaneToClientMessage) => void }>;
+export type ControlPlane = Readonly<{ app: FastifyInstance; database: ControlPlaneDatabase; auth: AuthService; review: M7ReviewService; operations: M8OperationsService; close: () => Promise<void>; emitEvent: (streamId: string, message: ControlPlaneToClientMessage) => void }>;
 const json = "application/json";
 const messageId = () => randomUUID();
 const now = () => new Date().toISOString();
@@ -40,10 +41,15 @@ type LoginBucketExpiry = Readonly<{ key: string; expiresAt: number; generation: 
 export function createControlPlane(config: ControlPlaneConfig): ControlPlane {
   const database = new ControlPlaneDatabase(config);
   const auth = new AuthServiceClass(database, config);
+  const operations = new M8OperationsService(database, config);
   const grantSecret = createHash("sha256").update(`chubz.m6.runtime-grant/v1\n${config.sessionSecret}`, "utf8").digest();
-  const orchestrator = new M4Orchestrator(database, new Phase1GrantKey("control-plane-runtime", grantSecret));
-  const review = new M7ReviewService(database, config);
-  const ui = new M6UiService(database, orchestrator, (principal, taskId) => review.snapshotForTask(principal, taskId));
+  const gate = (projectId: string): void => operations.assertExecutionAllowed(projectId);
+  const orchestrator = new M4Orchestrator(database, new Phase1GrantKey("control-plane-runtime", grantSecret), undefined, gate);
+  operations.reconcileTaskLifecycle(orchestrator);
+  const review = new M7ReviewService(database, config, gate);
+  operations.reconcileAfterRestart();
+  operations.project();
+  const ui = new M6UiService(database, orchestrator, (principal, taskId) => review.snapshotForTask(principal, taskId), gate);
   const loginBuckets = new Map<string, LoginBucket>();
   const loginBucketExpiries: LoginBucketExpiry[] = [];
   let loginBucketGeneration = 0;
@@ -112,29 +118,30 @@ export function createControlPlane(config: ControlPlaneConfig): ControlPlane {
     emitEvent(streamId, message);
   };
   review.setTransitionPublisher(publishTaskEvent);
+  operations.setPublisher(publishTaskEvent);
   app.get("/v1/ui/snapshot", async (request, reply) => {
     const principal = principalFor(request); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request));
-    return { ...ui.snapshot(principal), csrfToken: principal.csrfToken };
+    return { ...ui.snapshot(principal), operations: operations.status(), csrfToken: principal.csrfToken };
   });
   app.post<{ Body: Record<string, unknown> }>("/v1/ui/tasks", async (request, reply) => {
     const principal = principalFor(request); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request));
-    try { const result = ui.createTask(principal, request.body); publishTaskEvent(String(result["taskId"]), "task.created"); return reply.code(201).send(result); } catch (error) { return m6Failure(error, request, reply); }
+    try { const result = ui.createTask(principal, request.body); publishTaskEvent(String(result["taskId"]), "task.created"); operations.project(); return reply.code(201).send(result); } catch (error) { return m6Failure(error, request, reply); }
   });
   app.post<{ Params: { taskId: string }; Body: Record<string, unknown> }>("/v1/ui/tasks/:taskId/approve-dispatch", async (request, reply) => {
     const principal = principalFor(request); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request));
-    try { const result = ui.approveDispatch(principal, request.params.taskId, request.body); publishTaskEvent(request.params.taskId, "dispatch.approved"); return result; } catch (error) { return m6Failure(error, request, reply); }
+    try { const result = ui.approveDispatch(principal, request.params.taskId, request.body); publishTaskEvent(request.params.taskId, "dispatch.approved"); operations.project(); return result; } catch (error) { return m6Failure(error, request, reply); }
   });
   app.post<{ Params: { taskId: string }; Body: Record<string, unknown> }>("/v1/ui/tasks/:taskId/cancel", async (request, reply) => {
     const principal = principalFor(request); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request));
-    try { const result = ui.cancel(principal, request.params.taskId, request.body); publishTaskEvent(request.params.taskId, "cancellation.requested"); return result; } catch (error) { return m6Failure(error, request, reply); }
+    try { const result = ui.cancel(principal, request.params.taskId, request.body); publishTaskEvent(request.params.taskId, "cancellation.requested"); operations.project(); return result; } catch (error) { return m6Failure(error, request, reply); }
   });
   app.post<{ Params: { taskId: string }; Body: Record<string, unknown> }>("/v1/ui/tasks/:taskId/decision", async (request, reply) => {
     const principal = principalFor(request); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request));
-    try { const result = ui.decideResult(principal, request.params.taskId, request.body); publishTaskEvent(request.params.taskId, "result.decided"); return result; } catch (error) { return m6Failure(error, request, reply); }
+    try { const result = ui.decideResult(principal, request.params.taskId, request.body); publishTaskEvent(request.params.taskId, "result.decided"); operations.project(); return result; } catch (error) { return m6Failure(error, request, reply); }
   });
   app.post<{ Params: { taskId: string }; Body: Record<string, unknown> }>("/v1/ui/tasks/:taskId/manual-text", async (request, reply) => {
     const principal = principalFor(request); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request));
-    try { const result = ui.manualText(principal, request.params.taskId, request.body); publishTaskEvent(request.params.taskId, "manual-relay.result-recorded"); return result; } catch (error) { return m6Failure(error, request, reply); }
+    try { const result = ui.manualText(principal, request.params.taskId, request.body); publishTaskEvent(request.params.taskId, "manual-relay.result-recorded"); operations.project(); return result; } catch (error) { return m6Failure(error, request, reply); }
   });
   app.post<{ Params: { taskId: string }; Body: Record<string, unknown> }>("/v1/ui/tasks/:taskId/manual-artifacts", async (request, reply) => {
     const principal = principalFor(request); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request));
@@ -167,6 +174,41 @@ export function createControlPlane(config: ControlPlaneConfig): ControlPlane {
   app.post<{ Body: Record<string, unknown> }>("/v1/ui/adapters/codex/refresh", async (request, reply) => {
     const principal = principalFor(request); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request));
     try { return ui.artifactUnavailable(request.body); } catch (error) { return m6Failure(error, request, reply); }
+  });
+  app.get("/v1/ui/operations", async (request, reply) => {
+    const principal = principalFor(request); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request));
+    return operations.status();
+  });
+  app.post<{ Body: Record<string, unknown> }>("/v1/ui/bridge-log/verify", async (request, reply) => {
+    const principal = principalFor(request); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request));
+    try { const result = operations.verifyProtected(principal, request.body); publishTaskEvent("m8-operations", "projection.verified"); return result; } catch (error) { return m6Failure(error, request, reply); }
+  });
+  app.post<{ Body: Record<string, unknown> }>("/v1/ui/bridge-log/rebuild", async (request, reply) => {
+    const principal = principalFor(request); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request));
+    try { const result = operations.rebuild(principal, request.body); publishTaskEvent("m8-operations", "projection.rebuilt"); return result; } catch (error) { return m6Failure(error, request, reply); }
+  });
+  app.post<{ Params: { incidentId: string }; Body: Record<string, unknown> }>("/v1/ui/recovery-incidents/:incidentId/acknowledge", async (request, reply) => {
+    const principal = principalFor(request); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request));
+    try { const result = operations.acknowledgeIncident(principal, request.params.incidentId, request.body); publishTaskEvent("m8-operations", "recovery-incident.acknowledged"); return result; } catch (error) { return m6Failure(error, request, reply); }
+  });
+  app.post<{ Params: { incidentId: string }; Body: Record<string, unknown> }>("/v1/ui/recovery-incidents/:incidentId/close", async (request, reply) => {
+    const principal = principalFor(request); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request));
+    try { const result = operations.closeIncident(principal, request.params.incidentId, request.body); publishTaskEvent("m8-operations", "recovery-incident.closed"); return result; } catch (error) { return m6Failure(error, request, reply); }
+  });
+  app.post<{ Body: Record<string, unknown> }>("/v1/ui/emergency-stops", async (request, reply) => {
+    const principal = principalFor(request); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request));
+    try {
+      const result = operations.activateStop(principal, request.body); const cancellations = result["cancellations"] as Array<{ taskId: string; operationId: string; state: string }>;
+      for (const cancellation of cancellations.filter((item) => item.state === "requested")) {
+        try { const task = orchestrator.getTask(cancellation.taskId); if (task.state === "RUNNING") orchestrator.cancel(cancellation.taskId); }
+        catch { database.connection.prepare("UPDATE m8_stop_operations SET cancellation_state='failed',updated_at=?,evidence_json=? WHERE stop_id=? AND operation_id=?").run(now(), JSON.stringify({ requestPersisted: true, taskTransition: "failed", terminationConfirmed: false }), result["stopId"], cancellation.operationId); }
+      }
+      publishTaskEvent("m8-operations", "emergency-stop.activated"); operations.project(); return reply.code(201).send(result);
+    } catch (error) { return m6Failure(error, request, reply); }
+  });
+  app.post<{ Params: { stopId: string }; Body: Record<string, unknown> }>("/v1/ui/emergency-stops/:stopId/release", async (request, reply) => {
+    const principal = principalFor(request); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request));
+    try { const result = operations.releaseStop(principal, request.params.stopId, request.body); publishTaskEvent("m8-operations", "emergency-stop.released"); return result; } catch (error) { return m6Failure(error, request, reply); }
   });
   // WebSocket routes are registered after the plugin has installed its route hook.
   // This preserves the plugin's upgrade handler instead of treating this as HTTP.
@@ -225,5 +267,5 @@ export function createControlPlane(config: ControlPlaneConfig): ControlPlane {
     const serialized = JSON.stringify(message);
     for (const socket of browserSockets) if (socket.readyState === socket.OPEN && socket.bufferedAmount < config.websocketMessageLimit * 4) socket.send(serialized, () => undefined);
   };
-  return Object.freeze({ app, database, auth, review, emitEvent, close: async () => { await app.close(); database.close(); } });
+  return Object.freeze({ app, database, auth, review, operations, emitEvent, close: async () => { await app.close(); database.close(); } });
 }

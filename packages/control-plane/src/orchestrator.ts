@@ -137,6 +137,7 @@ export class M4Orchestrator {
     private readonly database: ControlPlaneDatabase,
     private readonly grantKey: Phase1GrantKey,
     private readonly clock: Clock = systemClock,
+    private readonly executionGate?: (projectId: string) => void,
   ) {}
 
   private now(): string { return this.clock.now().toISOString(); }
@@ -477,6 +478,7 @@ export class M4Orchestrator {
   public approveAndIssueCodex(commandId: string, input: Readonly<{ taskId: string; attemptId: string; ownerId: string; approvalId: string; grantId: string; issuerId: string; lifetimeMs: number }>): Readonly<{ approvalId: string; grant: CapabilityGrant }> {
     for (const [label, value] of Object.entries(input)) if (label !== "lifetimeMs") assertId(String(value), label);
     const task = this.task(input.taskId); const attempt = this.attempt(input.attemptId);
+    this.executionGate?.(task.project_id);
     if (task.state !== "AWAITING_DISPATCH" || task.attempt_id !== input.attemptId || attempt.task_id !== input.taskId) throw new M4Error("STOP_POINT", "task is not awaiting Codex dispatch approval");
     const assignmentRow = this.database.connection.prepare("SELECT assignment_id,assignment_json,status,worker_id,operation_id FROM m4_assignments WHERE task_id=? AND attempt_id=?").get(input.taskId, input.attemptId) as AssignmentRow | undefined;
     const scopeRow = this.database.connection.prepare("SELECT scope_id,scope_hash,scope_json FROM m4_write_scopes WHERE task_id=? AND attempt_id=?").get(input.taskId, input.attemptId) as ScopeRow | undefined;
@@ -542,6 +544,7 @@ export class M4Orchestrator {
       const now = this.now();
       for (const row of rows) {
         const task = this.task(row.task_id);
+        this.executionGate?.(task.project_id);
         const runningProject = this.database.connection.prepare("SELECT COUNT(*) AS count FROM tasks WHERE project_id=? AND state='RUNNING'").get(task.project_id) as { count: number };
         const claimedProject = this.database.connection.prepare("SELECT COUNT(*) AS count FROM m4_dispatch_queue q JOIN tasks t ON t.task_id=q.task_id WHERE q.status='claimed' AND t.project_id=?").get(task.project_id) as { count: number };
         if (runningProject.count + claimedProject.count >= M4_LIMITS.projectConcurrency) continue;
@@ -594,6 +597,7 @@ export class M4Orchestrator {
       const now = this.now();
       for (const row of rows) {
         const task = this.task(row.task_id);
+        this.executionGate?.(task.project_id);
         const runningProject = this.database.connection.prepare("SELECT COUNT(*) AS count FROM tasks WHERE project_id=? AND state='RUNNING'").get(task.project_id) as { count: number };
         const claimedProject = this.database.connection.prepare("SELECT COUNT(*) AS count FROM m4_dispatch_queue q JOIN tasks t ON t.task_id=q.task_id WHERE q.status='claimed' AND t.project_id=?").get(task.project_id) as { count: number };
         if (runningProject.count + claimedProject.count >= M4_LIMITS.projectConcurrency) continue;
@@ -638,6 +642,13 @@ export class M4Orchestrator {
         };
         transitioned = this.transition(taskId, task.version, { to: "BLOCKED", actor: "system-recovery", proposedBlockedContext: blocked });
       }
+      const cancellationState = result.state === "cancelled" ? "confirmed" : result.state === "execution-unknown" ? "uncertain" : "failed";
+      this.database.connection.prepare("UPDATE m8_stop_operations SET cancellation_state=?,updated_at=?,evidence_json=? WHERE operation_id=? AND cancellation_state='requested'").run(
+        cancellationState,
+        this.now(),
+        canonical({ bridgeResultState: result.state, resultRef: result.resultRef, terminationConfirmed: result.state === "cancelled" }),
+        result.operationId,
+      );
       this.appendEvent(`task-${taskId}`, "operation.completed", { taskId, attemptId: task.attempt_id, operationId: result.operationId, resultRef: result.resultRef, state: result.state, outputTruncated: result.outputTruncated, failureCode: result.failureCode });
       return Object.freeze({ ...transitioned, resultRef: result.resultRef });
     }))();

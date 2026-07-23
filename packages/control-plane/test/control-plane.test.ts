@@ -27,10 +27,10 @@ describe("database foundation", () => {
     const root = mkdtempSync(join(tmpdir(), "chubz-control-plane-test-")); roots.push(root); const config = createTestConfig(root); const first = createControlPlane(config); const db = first.database.connection;
     expect((db.pragma("journal_mode", { simple: true }) as string).toLowerCase()).toBe("wal");
     expect(db.pragma("foreign_keys", { simple: true })).toBe(1);
-    expect((db.prepare("SELECT count(*) AS n FROM schema_migrations").get() as { n: number }).n).toBe(7);
+    expect((db.prepare("SELECT count(*) AS n FROM schema_migrations").get() as { n: number }).n).toBe(8);
     await first.close();
     const second = createControlPlane(config);
-    expect((second.database.connection.prepare("SELECT count(*) AS n FROM schema_migrations").get() as { n: number }).n).toBe(7);
+    expect((second.database.connection.prepare("SELECT count(*) AS n FROM schema_migrations").get() as { n: number }).n).toBe(8);
     await second.close();
   });
 });
@@ -74,6 +74,15 @@ describe("migration hardening", () => {
   const downgradeToV1 = (database: ControlPlaneDatabase): void => {
     const db = database.connection;
     db.exec(`
+      DROP TABLE m8_mutations;
+      DROP TABLE m8_bridge_state;
+      DROP TABLE m8_reconciliation_runs;
+      DROP TABLE m8_stop_operations;
+      DROP TABLE m8_emergency_state;
+      DROP TABLE m8_emergency_stops;
+      DROP TABLE m8_recovery_incidents;
+      DROP TABLE m8_projection_state;
+      DROP TABLE m8_operational_events;
       DROP TRIGGER administrators_singleton_insert;
       DROP TRIGGER m7_review_packages_immutable_update;
       DROP TRIGGER m7_review_packages_immutable_delete;
@@ -104,7 +113,7 @@ describe("migration hardening", () => {
       ALTER TABLE tasks DROP COLUMN current_operation_id;
       ALTER TABLE tasks DROP COLUMN created_at;
       ALTER TABLE tasks DROP COLUMN version;
-      DELETE FROM schema_migrations WHERE version IN (2, 3, 4, 5, 6, 7);
+      DELETE FROM schema_migrations WHERE version IN (2, 3, 4, 5, 6, 7, 8);
     `);
   };
   it("upgrades zero and one administrator databases but fails closed for multiple administrators", () => {

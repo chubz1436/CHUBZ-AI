@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { spawn } from "node:child_process";
 import { promisify } from "node:util";
+import type { EmergencyStopGate } from "./emergency-stop.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -116,6 +117,7 @@ export type ProcessRunRequest = Readonly<{
   timeoutMs: number;
   terminationDeadlineMs: number;
   maxOutputBytes: number;
+  emergencyScope?: Readonly<{ projectId: string; operationId: string }>;
   signal?: AbortSignal;
 }>;
 export type ProcessRunResult = Readonly<{
@@ -131,13 +133,14 @@ export type ProcessRunResult = Readonly<{
 }>;
 
 export class ProcessSupervisor {
-  public constructor(private readonly spawner: ProcessSpawner, private readonly trees: ProcessTreeController) {}
+  public constructor(private readonly spawner: ProcessSpawner, private readonly trees: ProcessTreeController, private readonly emergencyGate?: EmergencyStopGate) {}
 
   public async run(request: ProcessRunRequest): Promise<ProcessRunResult> {
     if (request.timeoutMs < 1 || request.timeoutMs > 86_400_000 || request.maxOutputBytes < 1 || request.maxOutputBytes > 16_777_216) throw new Error("invalid process bounds");
     if (Buffer.byteLength(request.taskContent) > 1_048_576) throw new Error("task content exceeds stdin bound");
     if (request.args.includes(request.taskContent)) throw new Error("task content must be delivered on stdin, not argv");
-    const child = this.spawner.spawn(request.executable, request.args, { cwd: request.cwd, env: request.env });
+    const spawn = () => this.spawner.spawn(request.executable, request.args, { cwd: request.cwd, env: request.env });
+    const child = this.emergencyGate ? request.emergencyScope ? this.emergencyGate.runBeforeSpawn(request.emergencyScope.projectId, request.emergencyScope.operationId, spawn) : (() => { throw new Error("emergency-stop scope is required before external process spawn"); })() : spawn();
     const stdout = new BoundedCapture(request.maxOutputBytes);
     const stderr = new BoundedCapture(request.maxOutputBytes);
     const drain = async (source: AsyncIterable<Uint8Array>, capture: BoundedCapture): Promise<void> => { for await (const chunk of source) capture.add(chunk); };
