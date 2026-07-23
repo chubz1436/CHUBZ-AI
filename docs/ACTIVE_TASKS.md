@@ -1,10 +1,10 @@
 # Active Tasks
 
-> **M8 STATUS (2026-07-23):** M1A-M7 are accepted on `main` at `6e1d206ce36b31a4909fcdae09a63b7e6ddd4136`. The owner authorized the bounded M8 Bridge Log, recovery/reconciliation, and global/project emergency-stop candidate on `task/m8-bridge-log-recovery-emergency-stop`. M8 is active and unaccepted pending independent read-only review and owner acceptance. M9 and later remain unauthorized. See [M8_RECOVERY_AND_EMERGENCY_CONTROLS.md](M8_RECOVERY_AND_EMERGENCY_CONTROLS.md).
+> **M9 STATUS (2026-07-23):** M1A-M8 are accepted on `main` at `10c080ce7a9a8441444b1f17ff1c904d58697a4a`. The owner authorized the bounded exact-reviewed-commit prepare/promote candidate on `task/m9-safe-apply-cherry-pick`. M9 is active and unaccepted pending independent read-only review and owner acceptance. M10 and later remain excluded. See [M9_SAFE_APPLY_AND_PROMOTION.md](M9_SAFE_APPLY_AND_PROMOTION.md).
 
-> **CURRENT STATUS: M1A-M7 ACCEPTED; M8 RECOVERY AND EMERGENCY-CONTROL CANDIDATE ACTIVE, LOCAL-ONLY, AND UNACCEPTED.**
+> **CURRENT STATUS: M1A-M8 ACCEPTED; M9 SAFE APPLY AND ATOMIC PROMOTION CANDIDATE ACTIVE, LOCAL-ONLY, AND UNACCEPTED.**
 
-M8 adds a rebuildable non-authoritative Bridge Log projection, persistent evidence-backed incidents, restart reconciliation that preserves at-most-once execution, and owner-gated global/project emergency stops enforced before Bridge process spawn. It does not add M9 apply or owner-project mutation.
+M8 is the accepted rebuildable non-authoritative Bridge Log, recovery/reconciliation, and global/project emergency-stop baseline. M9 does not weaken its at-most-once or emergency-stop rules.
 
 > **M6 ACCEPTANCE (2026-07-22):** The bounded local-only web chat and Kanban milestone independently passed, was owner-accepted, merged, and pushed on `main` at `00904342a685d20eb1f7b9566e9634aa49e9287f`.
 
@@ -27,7 +27,8 @@ M8 adds a rebuildable non-authoritative Bridge Log projection, persistent eviden
 13. **Completed and accepted** — M5 Codex CLI Adapter and Manual Relay, accepted on `main` at `3e926486f03223ee93591ca0822568217a26eb2b`.
 14. **Completed and accepted** — M6 Web Chat and Kanban UI, accepted on `main` at `00904342a685d20eb1f7b9566e9634aa49e9287f`.
 15. **Completed and accepted** — M7 authoritative evidence capture and immutable review packages, accepted on `main` at `6e1d206ce36b31a4909fcdae09a63b7e6ddd4136`.
-16. **Active and unaccepted** — M8 Bridge Log projection, operational recovery/reconciliation, and global/project emergency stop on `task/m8-bridge-log-recovery-emergency-stop`; independent read-only review and separate owner acceptance remain required.
+16. **Completed and accepted** — M8 Bridge Log projection, operational recovery/reconciliation, and global/project emergency stop, accepted on `main` at `10c080ce7a9a8441444b1f17ff1c904d58697a4a`.
+17. **Active and unaccepted** — M9 verified exact-commit eligibility, isolated prepare/validation, and owner-confirmed compare-and-swap promotion on `task/m9-safe-apply-cherry-pick`; independent read-only review and separate owner acceptance remain required.
 
 Earlier project bootstrap and worker onboarding (Codex, BUNSO, Antigravity) are complete and precede item 1.
 
@@ -58,9 +59,9 @@ Deferred owner inputs (not blockers, per D-022): the Obsidian vault path (U-7) r
 
 M1A Core Contracts and M1B Protocol Contracts are completed and merged into `main`.
 
-**M1A through M7 are complete and accepted.** M8 has explicit owner GO only for the bounded local-only recovery and emergency-control candidate on `task/m8-bridge-log-recovery-emergency-stop`; it remains unaccepted. Codex CLI is the first automated connector and manual relay remains the universal owner-attested fallback. M9 and later remain unauthorized.
+**M1A through M8 are complete and accepted.** M9 has explicit owner GO only for the bounded exact-reviewed-commit prepare/promote candidate on `task/m9-safe-apply-cherry-pick`; it remains unaccepted. Codex CLI is the first automated connector and manual relay remains the universal owner-attested fallback. M10 and later remain excluded.
 
-Nothing in this file authorizes owner-project integration, domain or tunnel configuration, server access, MikroTik access, deployment, infrastructure change, production action, or M9+ work.
+Nothing in this file authorizes owner-project mutation outside the bounded M9 exact-commit prepare/promote workflow, domain or tunnel configuration, server access, MikroTik access, deployment, infrastructure change, production action, or M10+ work.
 
 ## M1D acceptance record
 

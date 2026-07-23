@@ -21,7 +21,7 @@ export type Snapshot = {
   generatedAt: string; csrfToken: string; session: { username: string; role: string }; controlPlane: { health: string; readiness: string; localOnly: boolean };
   bridge: { availability: string; connected: boolean; lastSeenAt: string | null; reason: string };
   cursor: { streamId: string; lastConsumedSequence: number; oldestRetainedSequence: number };
-  tasks: Task[]; adapters: Adapter[]; workers: Array<Record<string, unknown>>;
+  tasks: Task[]; adapters: Adapter[]; workers: Array<Record<string, unknown>>; applies: Array<Record<string, unknown>>; applyIncidents: Array<Record<string, unknown>>;
   operations: {
     projection: { schemaVersion: string; cursor: number; entryCount: number; status: string; verifiedAt: string | null; rebuiltAt: string | null; failureReason: string | null; version: number; authoritative: false; editable: false };
     bridge: { availability: string; connected: boolean; lastSeenAt: string | null; failClosed: boolean };

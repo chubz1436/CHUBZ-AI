@@ -1,5 +1,6 @@
 export * from "./enrollment.js";
 export * from "./evidence-capture.js";
+export * from "./safe-apply.js";
 export * from "./connection.js";
 export * from "./journal.js";
 export * from "./process-supervisor.js";

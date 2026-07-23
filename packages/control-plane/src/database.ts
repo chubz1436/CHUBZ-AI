@@ -389,6 +389,118 @@ const migrations: readonly Migration[] = [
       PRIMARY KEY(mutation_scope,idempotency_key)
     );
   ` },
+  { version: 9, sql: `
+    CREATE TABLE m9_repository_bindings (
+      repository_binding_id TEXT PRIMARY KEY,
+      owner_id TEXT NOT NULL REFERENCES administrators(id),
+      project_id TEXT NOT NULL,
+      binding_kind TEXT NOT NULL CHECK(binding_kind IN ('source-managed','target-owner')),
+      repository_identity TEXT NOT NULL,
+      canonical_path TEXT NOT NULL,
+      validation_plans_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      version INTEGER NOT NULL DEFAULT 1,
+      UNIQUE(owner_id, project_id, binding_kind),
+      UNIQUE(repository_identity)
+    );
+    CREATE TRIGGER m9_repository_binding_path_immutable
+      BEFORE UPDATE OF canonical_path,repository_identity,owner_id,project_id,binding_kind ON m9_repository_bindings
+      BEGIN SELECT RAISE(ABORT, 'repository binding identity is immutable'); END;
+
+    CREATE TABLE m9_apply_requests (
+      apply_id TEXT PRIMARY KEY,
+      owner_id TEXT NOT NULL REFERENCES administrators(id),
+      source_project_id TEXT NOT NULL,
+      target_project_id TEXT NOT NULL,
+      task_id TEXT NOT NULL REFERENCES tasks(task_id),
+      attempt_id TEXT NOT NULL REFERENCES task_attempts(attempt_id),
+      operation_id TEXT NOT NULL,
+      worker_id TEXT NOT NULL,
+      adapter_id TEXT NOT NULL,
+      capture_id TEXT NOT NULL REFERENCES m7_capture_requests(capture_id),
+      package_id TEXT NOT NULL REFERENCES m7_review_packages(package_id),
+      package_schema_version TEXT NOT NULL,
+      package_digest TEXT NOT NULL,
+      manifest_digest TEXT NOT NULL,
+      source_repository_identity TEXT NOT NULL,
+      reviewed_baseline TEXT NOT NULL,
+      reviewed_commit TEXT NOT NULL,
+      reviewed_paths_json TEXT NOT NULL,
+      target_repository_identity TEXT NOT NULL,
+      target_ref TEXT NOT NULL,
+      expected_old_head TEXT NOT NULL,
+      apply_mode TEXT NOT NULL CHECK(apply_mode IN ('exact-reviewed-commit')),
+      validation_plan_id TEXT NOT NULL,
+      validation_plan_json TEXT NOT NULL,
+      eligibility_json TEXT NOT NULL,
+      request_digest TEXT NOT NULL UNIQUE,
+      status TEXT NOT NULL CHECK(status IN ('planned','prepare-queued','preparing','validating','ready','conflicted','validation-failed','cancel-requested','cancelled','apply-unknown','promotion-queued','promoting','promoted','stale','promotion-blocked','promotion-unknown')),
+      owner_approval_id TEXT,
+      capability_grant_id TEXT,
+      capability_consumed_at TEXT,
+      prepared_head TEXT,
+      preparation_digest TEXT NOT NULL,
+      prepare_result_json TEXT,
+      validation_evidence_digest TEXT,
+      apply_worktree_digest TEXT,
+      promotion_confirmation_id TEXT,
+      promotion_confirmation_digest TEXT,
+      promotion_result_json TEXT,
+      rollback_evidence_json TEXT NOT NULL,
+      failure_details TEXT,
+      limitation_details_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      version INTEGER NOT NULL DEFAULT 1,
+      UNIQUE(owner_id, package_id, target_project_id, target_ref, expected_old_head, request_digest)
+    );
+    CREATE INDEX m9_apply_owner_status_idx ON m9_apply_requests(owner_id,status,updated_at);
+    CREATE INDEX m9_apply_task_idx ON m9_apply_requests(owner_id,task_id,attempt_id,created_at);
+
+    CREATE TABLE m9_capability_grants (
+      grant_id TEXT PRIMARY KEY,
+      apply_id TEXT NOT NULL UNIQUE REFERENCES m9_apply_requests(apply_id),
+      owner_id TEXT NOT NULL REFERENCES administrators(id),
+      capability TEXT NOT NULL CHECK(capability IN ('prepare-exact-reviewed-commit')),
+      binding_digest TEXT NOT NULL UNIQUE,
+      status TEXT NOT NULL CHECK(status IN ('issued','consumed','revoked','expired')),
+      issued_at TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      consumed_at TEXT
+    );
+
+    CREATE TABLE m9_apply_evidence (
+      evidence_id TEXT PRIMARY KEY,
+      apply_id TEXT NOT NULL REFERENCES m9_apply_requests(apply_id),
+      evidence_kind TEXT NOT NULL,
+      evidence_digest TEXT NOT NULL UNIQUE,
+      evidence_json TEXT NOT NULL,
+      recorded_at TEXT NOT NULL,
+      UNIQUE(apply_id,evidence_kind,evidence_digest)
+    );
+    CREATE TRIGGER m9_apply_evidence_immutable_update
+      BEFORE UPDATE ON m9_apply_evidence BEGIN SELECT RAISE(ABORT, 'apply evidence is immutable'); END;
+    CREATE TRIGGER m9_apply_evidence_immutable_delete
+      BEFORE DELETE ON m9_apply_evidence BEGIN SELECT RAISE(ABORT, 'apply evidence is immutable'); END;
+
+    CREATE TABLE m9_mutations (
+      mutation_scope TEXT NOT NULL,
+      idempotency_key TEXT NOT NULL,
+      request_digest TEXT NOT NULL,
+      result_json TEXT,
+      recorded_at TEXT NOT NULL,
+      PRIMARY KEY(mutation_scope,idempotency_key)
+    );
+
+    CREATE TRIGGER m9_finalized_prepare_evidence_guard
+      BEFORE UPDATE OF prepare_result_json,validation_evidence_digest,apply_worktree_digest,prepared_head ON m9_apply_requests
+      WHEN OLD.prepare_result_json IS NOT NULL
+      BEGIN SELECT RAISE(ABORT, 'finalized preparation evidence is immutable'); END;
+    CREATE TRIGGER m9_finalized_promotion_evidence_guard
+      BEFORE UPDATE OF promotion_result_json,promotion_confirmation_digest ON m9_apply_requests
+      WHEN OLD.promotion_result_json IS NOT NULL
+      BEGIN SELECT RAISE(ABORT, 'finalized promotion evidence is immutable'); END;
+  ` },
 ];
 const checksum = (sql: string): string => createHash("sha256").update(sql).digest("hex");
 export class MigrationError extends Error { constructor() { super("Control Plane database migration failed."); this.name = "MigrationError"; } }

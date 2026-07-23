@@ -1,16 +1,18 @@
 # Architecture
 
+> **M9 candidate note (2026-07-23):** M1A-M8 are accepted on `main` at `10c080ce7a9a8441444b1f17ff1c904d58697a4a`. The Control Plane verifies and persists exact M7 eligibility and owner gates; the outbound-only Bridge alone performs isolated exact-commit preparation, validation, and compare-and-swap ref promotion. Owner working copies are never execution workspaces, conflicts fail closed, and push/deployment remain unavailable. See [M9_SAFE_APPLY_AND_PROMOTION.md](M9_SAFE_APPLY_AND_PROMOTION.md).
+
 > **M8 candidate note (2026-07-23):** Control Plane SQLite state and the independent Local Bridge operation journal remain authoritative. Bridge Log Markdown is a bounded, sanitized, rebuildable projection only. Persistent recovery incidents describe operational uncertainty without creating execution authority. Global/project emergency stops are authoritative Control Plane state and are rechecked by the outbound-only Bridge immediately before process spawn. Release never auto-resumes or retries blocked work. See [M8_RECOVERY_AND_EMERGENCY_CONTROLS.md](M8_RECOVERY_AND_EMERGENCY_CONTROLS.md).
 
-> **M7 STATUS:** M1A-M6 are accepted; the M7 runtime evidence and review-package candidate is active and unaccepted.
+> **Historical M7 boundary (now accepted):** M7 established the runtime-evidence and immutable review-package authority split described below. M8 and the current unaccepted M9 candidate extend that accepted foundation without changing it.
 
 ## M7 authority split
 
 The Control Plane persists capture identity, eligibility, lifecycle, failure/limitation metadata, package bindings, idempotency, restart reconciliation, ownership checks, and browser/WebSocket projections. The outbound-only Local Bridge observes Git and supervised process state only inside managed clones and exact per-attempt worktrees, constructs bounded sanitized canonical packages beneath managed-data roots, and never uses or mutates owner working copies. Finalized packages are immutable and independently hash-verifiable. Worker claims, system observations, owner-attested manual evidence, and reviewer conclusions remain separate categories. See [M7_EVIDENCE_AND_REVIEW_PACKAGES.md](M7_EVIDENCE_AND_REVIEW_PACKAGES.md).
 
-M7 does not add Bridge Log/Obsidian projection, recovery-console controls, project apply/integration, routing, deployment, or remote access; these remain later gated milestones.
+At the M7 boundary, Bridge Log/Obsidian projection, recovery controls, project apply/integration, routing, deployment, and remote access were excluded. M8 later added the accepted Bridge Log, recovery, and emergency-stop controls; only the bounded M9 exact-commit apply candidate described above is now active. Routing, deployment, and remote access remain excluded.
 
-> **STATUS: ARCHITECTURE REFERENCE — M1A-M6 ACCEPTED; M7 RUNTIME EVIDENCE CANDIDATE ACTIVE AND UNACCEPTED**
+> **STATUS: ARCHITECTURE REFERENCE — M1A-M8 ACCEPTED; M9 SAFE APPLY CANDIDATE ACTIVE AND UNACCEPTED**
 
 ## Planned components
 

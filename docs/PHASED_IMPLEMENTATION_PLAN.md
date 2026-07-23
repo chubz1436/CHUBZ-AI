@@ -1,12 +1,14 @@
 # Phased Implementation Plan
 
-> **M8 STATUS (2026-07-23):** M1A-M7 are accepted on `main` at `6e1d206ce36b31a4909fcdae09a63b7e6ddd4136`. M8 has explicit owner GO for a rebuildable non-authoritative Bridge Log, persistent evidence-backed recovery incidents, restart reconciliation that preserves at-most-once execution, and owner-gated global/project emergency stops enforced before Bridge process spawn. The candidate remains unaccepted pending independent read-only review and owner acceptance. M9+ remains excluded.
+> **M9 STATUS (2026-07-23):** M1A-M8 are accepted on `main` at `10c080ce7a9a8441444b1f17ff1c904d58697a4a`. M9 has explicit owner GO only for exact reviewed-commit eligibility, isolated prepare/validation, separate owner-confirmed compare-and-swap promotion, restart reconciliation, and rollback evidence. Commit ranges, patches, push, deployment, automatic rollback, and M10+ remain excluded. The candidate is unaccepted pending independent read-only review and owner acceptance.
+
+> **M8 ACCEPTANCE (2026-07-23):** The Bridge Log, recovery/reconciliation, and emergency-stop milestone is accepted on `main` at `10c080ce7a9a8441444b1f17ff1c904d58697a4a`.
 
 > **M6 ACCEPTANCE (2026-07-22):** The bounded local-only web chat and Kanban milestone independently passed, was owner-accepted, merged, and pushed on `main` at `00904342a685d20eb1f7b9566e9634aa49e9287f`.
 
 > **M5 COMPLETION (2026-07-22):** The Codex CLI adapter and owner-attested manual relay independently passed, were owner-accepted, merged, and pushed on `main` at `3e926486f03223ee93591ca0822568217a26eb2b`.
 
-> **STATUS: ACCEPTED PLAN — M1A-M7 COMPLETE AND ACCEPTED; M8 RECOVERY AND EMERGENCY-CONTROL CANDIDATE ACTIVE, LOCAL-ONLY, AND UNACCEPTED**
+> **STATUS: ACCEPTED PLAN — M1A-M8 COMPLETE AND ACCEPTED; M9 SAFE APPLY CANDIDATE ACTIVE, LOCAL-ONLY, AND UNACCEPTED**
 >
 > Author: Claude Code / BUNSO (Fable 5), per accepted decision D-005; implementation-worker assignment amended by D-019.
 > Date: 2026-07-10. Revised following Bantay's required revisions R1–R7.

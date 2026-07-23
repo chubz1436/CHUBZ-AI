@@ -181,6 +181,17 @@ const parseStatus = (raw: string): readonly StatusEntry[] => {
   if (entries.length > M7_CAPTURE_LIMITS.maxFiles) throw new Error("changed-path count exceeds capture bound");
   return entries.sort((left, right) => left.path.localeCompare(right.path));
 };
+const parseReviewedDiffPaths = (raw: string, worktreeStatus: readonly StatusEntry[]): readonly StatusEntry[] => {
+  const tokens = raw.split("\0").filter(Boolean); const entries = new Map<string, StatusEntry>();
+  for (let index = 0; index < tokens.length;) {
+    const code = tokens[index++]!; const operation: StatusEntry["operation"] = code.startsWith("R") ? "renamed" : code.startsWith("C") ? "copied" : code === "A" ? "added" : code === "D" ? "deleted" : code === "T" ? "type-changed" : "modified";
+    const originalPath = operation === "renamed" || operation === "copied" ? safeRelative(tokens[index++] ?? "") : null; const path = safeRelative(tokens[index++] ?? "");
+    entries.set(path, { path, originalPath, operation, staged: false, unstaged: false, untracked: false, headMode: null, indexMode: null, worktreeMode: null });
+  }
+  for (const status of worktreeStatus) entries.set(status.path, status);
+  if (entries.size > M7_CAPTURE_LIMITS.maxFiles) throw new Error("changed-path count exceeds capture bound");
+  return [...entries.values()].sort((left, right) => left.path.localeCompare(right.path));
+};
 
 export class EvidenceCaptureService {
   private readonly inFlight = new Map<string, Readonly<{ requestDigest: string; promise: Promise<ReviewPackageResult> }>>();
@@ -229,12 +240,13 @@ export class EvidenceCaptureService {
     const mergeBaseResult = await git(worktree, ["merge-base", input.baselineCommit, startHead], true);
     const subjects = (await git(worktree, ["log", "--format=%H%x09%s", "--max-count=128", `${input.baselineCommit}..${startHead}`], true)).stdout.split(/\r?\n/u).filter(Boolean).map((line) => boundedSanitized(line, 1024).text);
     const rawMeta = (await git(worktree, ["diff", "--raw", "--no-abbrev", "--find-renames", "--find-copies", "-z", input.baselineCommit, "--"])).stdout;
+    const reviewedStatus = parseReviewedDiffPaths((await git(worktree, ["diff", "--name-status", "--find-renames", "--find-copies", "-z", input.baselineCommit, "--"])).stdout, status);
     const numstat = (await git(worktree, ["diff", "--numstat", input.baselineCommit, "--"])).stdout;
     let additions = 0; let deletions = 0; let binaryFiles = 0; const perPathStats = new Map<string, { additions: number | null; deletions: number | null }>();
     for (const line of numstat.split(/\r?\n/u).filter(Boolean)) { const match = /^(\d+|-)\t(\d+|-)\t(.+)$/u.exec(line); if (!match) throw new Error("malformed Git numstat evidence"); if (match[1] === "-" || match[2] === "-") { binaryFiles += 1; continue; } const added = Number(match[1]); const deleted = Number(match[2]); additions += added; deletions += deleted; try { perPathStats.set(safeRelative(match[3]!), { additions: added, deletions: deleted }); } catch { /* rename display forms remain represented by aggregate statistics */ } }
     const diffRaw = (await git(worktree, ["diff", "--no-ext-diff", "--no-textconv", "--find-renames", "--find-copies", "--unified=3", input.baselineCommit, "--"])).stdout;
     const diff = boundedSanitized(diffRaw, M7_CAPTURE_LIMITS.maxDiffBytes);
-    const pathEvidence = await Promise.all(status.map(async (entry) => {
+    const pathEvidence = await Promise.all(reviewedStatus.map(async (entry) => {
       const beforePath = entry.originalPath ?? entry.path;
       const before = await gitBytes(worktree, ["show", `${input.baselineCommit}:${beforePath}`]);
       const afterPath = resolve(worktree, ...entry.path.split("/"));
@@ -271,7 +283,7 @@ export class EvidenceCaptureService {
       binding: { ownerId: input.ownerId, projectId: input.projectId, taskId: input.taskId, attemptId: input.attemptId, operationId: input.operationId, journalId: input.journalId, workerId: input.workerId, adapterId: input.adapterId, adapterRunId: input.adapterRunId },
       capturedAt: input.capturedAt, packageStatus,
       git: { repositoryId: sha256(canonicalPath(clone)), worktree: `managed://${input.projectId}/${input.attemptId}`, branch, detached: branch === null, head: finishHead, directParent: parentResult.exitCode === 0 ? parentResult.stdout.trim() : null, baselineCommit: input.baselineCommit, mergeBase: mergeBaseResult.exitCode === 0 ? mergeBaseResult.stdout.trim() : null, commitSubjects: subjects, refsStable: startRefs === finishRefs, configurationAssurance: { systemConfigDisabled: true, globalConfigDisabled: true, hooksDisabled: true, externalDiffDisabled: true, textConversionDisabled: true }, rawMetadataDigest: sha256(rawMeta), numstatDigest: sha256(numstat) },
-      changedPaths: pathEvidence, diffStatistics: { files: status.length, additions, deletions, binaryFiles },
+      changedPaths: pathEvidence, diffStatistics: { files: reviewedStatus.length, additions, deletions, binaryFiles },
       diff: { format: "unified", text: diff.text, byteLimit: M7_CAPTURE_LIMITS.maxDiffBytes, truncated: diff.truncated, redacted: diff.redacted, redactionCount: diff.redactionCount, complete: !diff.truncated && !diff.redacted && !status.some((entry) => entry.untracked) },
       validations,
       artifacts: { references: validations.flatMap((item) => Array.isArray(item.artifactHashes) ? item.artifactHashes : []), quarantineStatus: validations.some((item) => Array.isArray(item.artifactHashes) && item.artifactHashes.length > 0) ? "metadata-only-not-executed" : "none-observed" },

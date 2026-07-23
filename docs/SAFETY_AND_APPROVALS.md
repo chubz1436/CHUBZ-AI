@@ -1,8 +1,10 @@
 # Safety and Approvals
 
-> **M3 STATUS (2026-07-22):** M2 is accepted on `main` through `13993fc583507509437d2f6121c70eddd3198bfd`. M3 is active, local-only, and unaccepted on `task/m3-bridge-foundation` under an explicit owner GO. It authorizes only the outbound enrollment/connection, protected storage, journal, process-supervisor, and managed clone/worktree foundations. It does not authorize an inbound listener, remote access, worker adapters, orchestration, UI, deployment, production integration, or M4+. Independent read-only security/reliability review and separate owner acceptance are required.
+> **M9 candidate gate:** apply planning, isolated preparation, and target promotion are distinct. Preparation consumes a short-lived one-use grant bound to one verified M7 package and expected target HEAD. Promotion requires a later owner confirmation bound to the prepared HEAD, validation evidence, package digest, target identity/ref, current version, and inactive emergency-stop state. No approval authorizes push, deployment, conflict resolution, retry of an unknown operation, or rollback. See [M9_SAFE_APPLY_AND_PROMOTION.md](M9_SAFE_APPLY_AND_PROMOTION.md).
 
-> **STATUS: POLICY REFERENCE — M1A-M2 ACCEPTED; M3 LOCAL BRIDGE FOUNDATION ACTIVE, LOCAL-ONLY, AND UNACCEPTED; M4+ UNAUTHORIZED.**
+> **Historical M3 boundary (now accepted):** M3 authorized only outbound enrollment/connection, protected storage, journaling, process supervision, and managed clone/worktree foundations. Later accepted milestones added bounded orchestration, UI, evidence, and recovery while preserving the no-inbound-listener, no-remote-access, and no-deployment boundaries.
+
+> **STATUS: POLICY REFERENCE — M1A-M8 ACCEPTED; M9 SAFE APPLY CANDIDATE ACTIVE AND UNACCEPTED; M10+ UNAUTHORIZED.**
 
 The command center is planned around least privilege, visible intent, task isolation, and owner-controlled escalation.
 

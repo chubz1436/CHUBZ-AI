@@ -17,9 +17,10 @@ import { Phase1GrantKey } from "./grant-engine.js";
 import { M6UiService, mapM6Error } from "./m6-ui.js";
 import { M7ReviewService } from "./m7-review.js";
 import { M8OperationsService } from "./m8-operations.js";
+import { M9ApplyService } from "./m9-apply.js";
 import { M4Orchestrator } from "./orchestrator.js";
 
-export type ControlPlane = Readonly<{ app: FastifyInstance; database: ControlPlaneDatabase; auth: AuthService; review: M7ReviewService; operations: M8OperationsService; close: () => Promise<void>; emitEvent: (streamId: string, message: ControlPlaneToClientMessage) => void }>;
+export type ControlPlane = Readonly<{ app: FastifyInstance; database: ControlPlaneDatabase; auth: AuthService; review: M7ReviewService; operations: M8OperationsService; apply: M9ApplyService; close: () => Promise<void>; emitEvent: (streamId: string, message: ControlPlaneToClientMessage) => void }>;
 const json = "application/json";
 const messageId = () => randomUUID();
 const now = () => new Date().toISOString();
@@ -49,6 +50,7 @@ export function createControlPlane(config: ControlPlaneConfig): ControlPlane {
   const review = new M7ReviewService(database, config, gate);
   operations.reconcileAfterRestart();
   operations.project();
+  const apply = new M9ApplyService(database, config, review, operations, gate);
   const ui = new M6UiService(database, orchestrator, (principal, taskId) => review.snapshotForTask(principal, taskId), gate);
   const loginBuckets = new Map<string, LoginBucket>();
   const loginBucketExpiries: LoginBucketExpiry[] = [];
@@ -119,9 +121,10 @@ export function createControlPlane(config: ControlPlaneConfig): ControlPlane {
   };
   review.setTransitionPublisher(publishTaskEvent);
   operations.setPublisher(publishTaskEvent);
+  apply.setPublisher(publishTaskEvent);
   app.get("/v1/ui/snapshot", async (request, reply) => {
     const principal = principalFor(request); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request));
-    return { ...ui.snapshot(principal), operations: operations.status(), csrfToken: principal.csrfToken };
+    return { ...ui.snapshot(principal), operations: operations.status(), applies: apply.snapshot(principal), applyIncidents: apply.incidents(principal), csrfToken: principal.csrfToken };
   });
   app.post<{ Body: Record<string, unknown> }>("/v1/ui/tasks", async (request, reply) => {
     const principal = principalFor(request); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request));
@@ -170,6 +173,38 @@ export function createControlPlane(config: ControlPlaneConfig): ControlPlane {
   app.get<{ Params: { packageId: string } }>("/v1/review-packages/:packageId", async (request, reply) => {
     const principal = principalFor(request); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request));
     try { const result = review.download(principal, request.params.packageId); return reply.header("Content-Type", "application/json; charset=utf-8").header("Content-Disposition", `attachment; filename="${result.fileName}"`).header("Digest", result.digest).send(result.content); } catch (error) { return m6Failure(error, request, reply); }
+  });
+  app.post<{ Body: Record<string, unknown> }>("/v1/ui/apply/eligibility", async (request, reply) => {
+    const principal = principalFor(request); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request));
+    try { return apply.eligibility(principal, request.body); } catch (error) { return m6Failure(error, request, reply); }
+  });
+  app.post<{ Body: Record<string, unknown> }>("/v1/ui/apply-plans", async (request, reply) => {
+    const principal = principalFor(request); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request));
+    try { const result = apply.createPlan(principal, request.body); return reply.code(201).send(result); } catch (error) { return m6Failure(error, request, reply); }
+  });
+  app.get<{ Params: { applyId: string } }>("/v1/ui/apply/:applyId", async (request, reply) => {
+    const principal = principalFor(request); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request));
+    try { const record = apply.snapshot(principal).find((item) => item["applyId"] === request.params.applyId); return record ?? publicError(reply, 404, "NOT_FOUND", reqId(request)); } catch (error) { return m6Failure(error, request, reply); }
+  });
+  app.get<{ Params: { applyId: string } }>("/v1/ui/apply/:applyId/evidence", async (request, reply) => {
+    const principal = principalFor(request); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request));
+    try { const record = apply.snapshot(principal).find((item) => item["applyId"] === request.params.applyId); return record ? { apply: record } : publicError(reply, 404, "NOT_FOUND", reqId(request)); } catch (error) { return m6Failure(error, request, reply); }
+  });
+  app.post<{ Params: { applyId: string }; Body: Record<string, unknown> }>("/v1/ui/apply/:applyId/prepare", async (request, reply) => {
+    const principal = principalFor(request); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request));
+    try { return reply.code(202).send(apply.requestPrepare(principal, request.params.applyId, request.body)); } catch (error) { return m6Failure(error, request, reply); }
+  });
+  app.post<{ Params: { applyId: string }; Body: Record<string, unknown> }>("/v1/ui/apply/:applyId/promote", async (request, reply) => {
+    const principal = principalFor(request); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request));
+    try { return reply.code(202).send(apply.confirmPromotion(principal, request.params.applyId, request.body)); } catch (error) { return m6Failure(error, request, reply); }
+  });
+  app.post<{ Params: { applyId: string }; Body: Record<string, unknown> }>("/v1/ui/apply/:applyId/cancel", async (request, reply) => {
+    const principal = principalFor(request); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request));
+    try { return apply.cancel(principal, request.params.applyId, request.body); } catch (error) { return m6Failure(error, request, reply); }
+  });
+  app.get("/v1/ui/apply-incidents", async (request, reply) => {
+    const principal = principalFor(request); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request));
+    return { incidents: apply.incidents(principal) };
   });
   app.post<{ Body: Record<string, unknown> }>("/v1/ui/adapters/codex/refresh", async (request, reply) => {
     const principal = principalFor(request); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request));
@@ -267,5 +302,5 @@ export function createControlPlane(config: ControlPlaneConfig): ControlPlane {
     const serialized = JSON.stringify(message);
     for (const socket of browserSockets) if (socket.readyState === socket.OPEN && socket.bufferedAmount < config.websocketMessageLimit * 4) socket.send(serialized, () => undefined);
   };
-  return Object.freeze({ app, database, auth, review, operations, emitEvent, close: async () => { await app.close(); database.close(); } });
+  return Object.freeze({ app, database, auth, review, operations, apply, emitEvent, close: async () => { await app.close(); database.close(); } });
 }
