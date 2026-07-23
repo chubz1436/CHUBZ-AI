@@ -24,3 +24,4 @@ export * from "./approval-security.js";
 export * from "./redaction.js";
 export * from "./capture-projection.js";
 export * from "./adapter-coordination.js";
+export * from "./m10-routing.js";

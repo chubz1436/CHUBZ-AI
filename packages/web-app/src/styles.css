@@ -61,3 +61,11 @@ input:hover, select:hover, textarea:hover { border-color: #48565c; } input:focus
 @media (prefers-reduced-motion: no-preference) { .task-card, .primary, .secondary { transition: transform .16s ease, border-color .16s ease, background .16s ease; } }
 .operations-page { display: grid; gap: 1rem; }.emergency-panel { border: 2px solid var(--line); padding: 1rem; background: var(--panel); }.emergency-panel.active { border-color: #d04a4a; box-shadow: 0 0 0 3px rgba(208,74,74,.14); }.emergency-panel > header, .stop-card > header, .incident-card > header { display: flex; justify-content: space-between; gap: .75rem; align-items: flex-start; }.emergency-panel h2, .operations-page h2 { margin: .25rem 0; }.stop-card, .incident-card { margin-top: .75rem; padding: .8rem; border: 1px solid var(--line); background: var(--panel-2); }.operations-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 1rem; }.incident-list { display: grid; gap: .75rem; }.global-alert.emergency { background: #421f24; border-color: #d04a4a; color: #fff; }
 @media (max-width: 800px) { .operations-grid { grid-template-columns: 1fr; }.emergency-panel > header, .incident-card > header { align-items: stretch; flex-direction: column; } }
+.routing-observations { margin-top: 2rem; }
+.routing-observations > header { margin-bottom: 1rem; }
+.routing-candidates { display: grid; gap: .75rem; margin: 1rem 0; }
+.fallback-plan { display: grid; gap: .75rem; margin-top: 1rem; padding: 1rem; border: 1px solid #5b482d; background: #171510; }
+.fallback-plan > p { margin: 0; color: var(--muted); font-size: .72rem; line-height: 1.5; }
+.route-candidate { border: 1px solid var(--border, #d7dbe2); border-radius: 12px; padding: 1rem; background: var(--surface, #fff); min-width: 0; }
+.route-candidate > header { display: flex; justify-content: space-between; gap: .75rem; align-items: center; }
+@media (max-width: 720px) { .route-candidate > header { align-items: flex-start; flex-direction: column; } }

@@ -1,6 +1,6 @@
 # Phased Implementation Plan
 
-> **M9 STATUS (2026-07-23):** M1A-M8 are accepted on `main` at `10c080ce7a9a8441444b1f17ff1c904d58697a4a`. M9 has explicit owner GO only for exact reviewed-commit eligibility, isolated prepare/validation, separate owner-confirmed compare-and-swap promotion, restart reconciliation, and rollback evidence. Commit ranges, patches, push, deployment, automatic rollback, and M10+ remain excluded. The candidate is unaccepted pending independent read-only review and owner acceptance.
+> **M10 STATUS (2026-07-23):** M1A-M9 are accepted on `main` at `df62ae84164ba8abffbaf9447d85f55de2332222`. M10 has explicit owner GO only for deterministic recommendation-first routing, quota/rate-limit confidence, exact owner route confirmation, plan-only fallback, restart reconciliation, protected APIs/events, and the bounded dashboard. New adapters, automatic dispatch/fallback, push/deploy/production, and M11+ remain excluded. The candidate is unaccepted pending independent read-only review and owner acceptance.
 
 > **M8 ACCEPTANCE (2026-07-23):** The Bridge Log, recovery/reconciliation, and emergency-stop milestone is accepted on `main` at `10c080ce7a9a8441444b1f17ff1c904d58697a4a`.
 
@@ -8,7 +8,7 @@
 
 > **M5 COMPLETION (2026-07-22):** The Codex CLI adapter and owner-attested manual relay independently passed, were owner-accepted, merged, and pushed on `main` at `3e926486f03223ee93591ca0822568217a26eb2b`.
 
-> **STATUS: ACCEPTED PLAN — M1A-M8 COMPLETE AND ACCEPTED; M9 SAFE APPLY CANDIDATE ACTIVE, LOCAL-ONLY, AND UNACCEPTED**
+> **STATUS: ACCEPTED PLAN — M1A-M9 COMPLETE AND ACCEPTED; M10 ROUTING CANDIDATE ACTIVE, LOCAL-ONLY, AND UNACCEPTED**
 >
 > Author: Claude Code / BUNSO (Fable 5), per accepted decision D-005; implementation-worker assignment amended by D-019.
 > Date: 2026-07-10. Revised following Bantay's required revisions R1–R7.

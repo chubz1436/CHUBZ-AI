@@ -1,8 +1,8 @@
 # Active Tasks
 
-> **M9 STATUS (2026-07-23):** M1A-M8 are accepted on `main` at `10c080ce7a9a8441444b1f17ff1c904d58697a4a`. The owner authorized the bounded exact-reviewed-commit prepare/promote candidate on `task/m9-safe-apply-cherry-pick`. M9 is active and unaccepted pending independent read-only review and owner acceptance. M10 and later remain excluded. See [M9_SAFE_APPLY_AND_PROMOTION.md](M9_SAFE_APPLY_AND_PROMOTION.md).
+> **M10 STATUS (2026-07-23):** M1A-M9 are accepted on `main` at `df62ae84164ba8abffbaf9447d85f55de2332222`. The owner authorized recommendation-first routing, quota confidence, exact owner route confirmation, and plan-only fallback on `task/m10-routing-quota-fallback`. M10 is active and unaccepted pending independent read-only review and owner acceptance. M11 and later remain excluded. See [M10_ROUTING_QUOTA_AND_FALLBACK.md](M10_ROUTING_QUOTA_AND_FALLBACK.md).
 
-> **CURRENT STATUS: M1A-M8 ACCEPTED; M9 SAFE APPLY AND ATOMIC PROMOTION CANDIDATE ACTIVE, LOCAL-ONLY, AND UNACCEPTED.**
+> **CURRENT STATUS: M1A-M9 ACCEPTED; M10 ROUTING, QUOTA, AND SAFE FALLBACK CANDIDATE ACTIVE, LOCAL-ONLY, AND UNACCEPTED.**
 
 M8 is the accepted rebuildable non-authoritative Bridge Log, recovery/reconciliation, and global/project emergency-stop baseline. M9 does not weaken its at-most-once or emergency-stop rules.
 
@@ -28,7 +28,8 @@ M8 is the accepted rebuildable non-authoritative Bridge Log, recovery/reconcilia
 14. **Completed and accepted** — M6 Web Chat and Kanban UI, accepted on `main` at `00904342a685d20eb1f7b9566e9634aa49e9287f`.
 15. **Completed and accepted** — M7 authoritative evidence capture and immutable review packages, accepted on `main` at `6e1d206ce36b31a4909fcdae09a63b7e6ddd4136`.
 16. **Completed and accepted** — M8 Bridge Log projection, operational recovery/reconciliation, and global/project emergency stop, accepted on `main` at `10c080ce7a9a8441444b1f17ff1c904d58697a4a`.
-17. **Active and unaccepted** — M9 verified exact-commit eligibility, isolated prepare/validation, and owner-confirmed compare-and-swap promotion on `task/m9-safe-apply-cherry-pick`; independent read-only review and separate owner acceptance remain required.
+17. **Completed and accepted** — M9 verified exact-commit eligibility, isolated prepare/validation, and owner-confirmed compare-and-swap promotion, accepted on `main` at `df62ae84164ba8abffbaf9447d85f55de2332222`.
+18. **Active and unaccepted** — M10 deterministic routing, quota confidence, exact owner confirmation, plan-only fallback, persistence, restart reconciliation, APIs, events, and dashboard on `task/m10-routing-quota-fallback`; independent read-only review and separate owner acceptance remain required.
 
 Earlier project bootstrap and worker onboarding (Codex, BUNSO, Antigravity) are complete and precede item 1.
 
@@ -59,9 +60,9 @@ Deferred owner inputs (not blockers, per D-022): the Obsidian vault path (U-7) r
 
 M1A Core Contracts and M1B Protocol Contracts are completed and merged into `main`.
 
-**M1A through M8 are complete and accepted.** M9 has explicit owner GO only for the bounded exact-reviewed-commit prepare/promote candidate on `task/m9-safe-apply-cherry-pick`; it remains unaccepted. Codex CLI is the first automated connector and manual relay remains the universal owner-attested fallback. M10 and later remain excluded.
+**M1A through M9 are complete and accepted.** M10 has explicit owner GO only for bounded recommendation-first routing, quota confidence, owner confirmation, and plan-only fallback on `task/m10-routing-quota-fallback`; it remains unaccepted. Codex CLI is the only automated connector and manual relay remains the permanent weaker owner-attested fallback. M11 and later remain excluded.
 
-Nothing in this file authorizes owner-project mutation outside the bounded M9 exact-commit prepare/promote workflow, domain or tunnel configuration, server access, MikroTik access, deployment, infrastructure change, production action, or M10+ work.
+Nothing in this file authorizes automatic dispatch, automatic fallback, new adapters, owner-project mutation outside accepted M9 boundaries, domain or tunnel configuration, server access, MikroTik access, deployment, infrastructure change, production action, or M11+ work.
 
 ## M1D acceptance record
 

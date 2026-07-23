@@ -27,10 +27,10 @@ describe("database foundation", () => {
     const root = mkdtempSync(join(tmpdir(), "chubz-control-plane-test-")); roots.push(root); const config = createTestConfig(root); const first = createControlPlane(config); const db = first.database.connection;
     expect((db.pragma("journal_mode", { simple: true }) as string).toLowerCase()).toBe("wal");
     expect(db.pragma("foreign_keys", { simple: true })).toBe(1);
-    expect((db.prepare("SELECT count(*) AS n FROM schema_migrations").get() as { n: number }).n).toBe(9);
+    expect((db.prepare("SELECT count(*) AS n FROM schema_migrations").get() as { n: number }).n).toBe(10);
     await first.close();
     const second = createControlPlane(config);
-    expect((second.database.connection.prepare("SELECT count(*) AS n FROM schema_migrations").get() as { n: number }).n).toBe(9);
+    expect((second.database.connection.prepare("SELECT count(*) AS n FROM schema_migrations").get() as { n: number }).n).toBe(10);
     await second.close();
   });
 });
@@ -74,6 +74,22 @@ describe("migration hardening", () => {
   const downgradeToV1 = (database: ControlPlaneDatabase): void => {
     const db = database.connection;
     db.exec(`
+      DROP TRIGGER m10_confirmation_immutable_delete;
+      DROP TRIGGER m10_confirmation_immutable_update;
+      DROP TRIGGER m10_recommendation_finalized_guard;
+      DROP TRIGGER m10_quota_immutable_delete;
+      DROP TRIGGER m10_quota_immutable_update;
+      DROP TABLE m10_route_confirmations;
+      DROP TABLE m10_fallback_plans;
+      DROP TABLE m10_candidate_evaluations;
+      DROP TABLE m10_recommendations;
+      DROP TABLE m10_routing_incidents;
+      DROP TABLE m10_routing_requests;
+      DROP TABLE m10_reconciliation_runs;
+      DROP TABLE m10_mutations;
+      DROP TABLE m10_health_observations;
+      DROP TABLE m10_quota_observations;
+      DROP TABLE m10_routing_policies;
       DROP TRIGGER m9_finalized_promotion_evidence_guard;
       DROP TRIGGER m9_finalized_prepare_evidence_guard;
       DROP TRIGGER m9_apply_evidence_immutable_delete;
@@ -123,7 +139,7 @@ describe("migration hardening", () => {
       ALTER TABLE tasks DROP COLUMN current_operation_id;
       ALTER TABLE tasks DROP COLUMN created_at;
       ALTER TABLE tasks DROP COLUMN version;
-      DELETE FROM schema_migrations WHERE version IN (2, 3, 4, 5, 6, 7, 8, 9);
+      DELETE FROM schema_migrations WHERE version IN (2, 3, 4, 5, 6, 7, 8, 9, 10);
     `);
   };
   it("upgrades zero and one administrator databases but fails closed for multiple administrators", () => {

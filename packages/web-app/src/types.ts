@@ -29,6 +29,15 @@ export type Snapshot = {
     incidents: Array<Record<string, unknown>>; entries: Array<Record<string, unknown>>; reconciliation: Record<string, unknown> | null;
   };
   manualRelay: { available: boolean; provenance: string; assurance: string; automatedExecution: false; artifactTransportAvailable: boolean; allowedArtifactTypes: string[]; appliedToProject: false; appliedToWorktree: false };
+  routing: {
+    routingVersion: string;
+    recommendations: Array<Record<string, unknown>>;
+    fallbackPlans: Array<Record<string, unknown>>;
+    quotaObservations: Array<Record<string, unknown>>;
+    healthObservations: Array<Record<string, unknown>>;
+    policies: Array<Record<string, unknown>>;
+    semantics: { recommendationIsDispatch: false; costIsEstimate: true; unknownQuotaIsAvailable: false; automaticFallback: false; executionUnknownFallback: false; manualRelayAssurance: string };
+  };
 };
 
 export type ApiError = Error & { status?: number; code?: string };

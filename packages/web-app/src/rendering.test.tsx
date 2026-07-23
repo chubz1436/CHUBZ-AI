@@ -35,3 +35,12 @@ describe("M9 bounded apply surface", () => {
     expect(api).toContain("/v1/ui/apply/eligibility"); expect(api).toContain("/v1/ui/apply-plans"); expect(api).toContain('"prepare" | "promote" | "cancel"'); expect(app).not.toContain("Force update"); expect(app).not.toContain("Resolve conflict"); expect(app).not.toContain("Deploy now"); expect(styles).toContain(".apply-card"); expect(styles).toContain("@media (max-width: 620px)");
   });
 });
+
+describe("M10 routing and quota surface", () => {
+  it("separates recommendation from dispatch and presents risk, quota, cost, limitations, and fallback truthfully", () => {
+    const app = readFileSync(new URL("./App.tsx", import.meta.url), "utf8"); const api = readFileSync(new URL("./api.ts", import.meta.url), "utf8"); const styles = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
+    expect(app).toContain("Routing and quota recommendation"); expect(app).toContain("Recommendation is separate from dispatch"); expect(app).toContain("Confirm selected route"); expect(app).toContain("A separate dispatch approval and grant are still required"); expect(app).toContain("Unknown is not available"); expect(app).toContain("estimated only — never authorization"); expect(app).toContain("Weaker manual provenance"); expect(app).toContain("Execution is unknown. No fallback or retry control is available");
+    expect(app).toContain("Rejection reasons"); expect(app).toContain("Score components"); expect(app).toContain("Sandbox assurance"); expect(app).toContain("Stale recommendation — confirmation unavailable"); expect(app).toContain("snapshot.operations.emergency.active"); expect(app).toContain("Safe fallback plan"); expect(app).toContain("Confirm plan only"); expect(app).toContain("No attempt, grant, dispatch, retry, or external execution will be created");
+    expect(api).toContain("/routing/recommendations"); expect(api).toContain("/routing/fallback/"); expect(api).toContain('"generate" | "confirm" | "reject"'); expect(app).not.toContain("Automatic dispatch toggle"); expect(styles).toContain(".routing-candidates"); expect(styles).toContain("@media (max-width: 720px)");
+  });
+});

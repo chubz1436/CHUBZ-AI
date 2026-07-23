@@ -18,9 +18,10 @@ import { M6UiService, mapM6Error } from "./m6-ui.js";
 import { M7ReviewService } from "./m7-review.js";
 import { M8OperationsService } from "./m8-operations.js";
 import { M9ApplyService } from "./m9-apply.js";
+import { M10RoutingService } from "./m10-routing.js";
 import { M4Orchestrator } from "./orchestrator.js";
 
-export type ControlPlane = Readonly<{ app: FastifyInstance; database: ControlPlaneDatabase; auth: AuthService; review: M7ReviewService; operations: M8OperationsService; apply: M9ApplyService; close: () => Promise<void>; emitEvent: (streamId: string, message: ControlPlaneToClientMessage) => void }>;
+export type ControlPlane = Readonly<{ app: FastifyInstance; database: ControlPlaneDatabase; auth: AuthService; review: M7ReviewService; operations: M8OperationsService; apply: M9ApplyService; routing: M10RoutingService; close: () => Promise<void>; emitEvent: (streamId: string, message: ControlPlaneToClientMessage) => void }>;
 const json = "application/json";
 const messageId = () => randomUUID();
 const now = () => new Date().toISOString();
@@ -51,7 +52,8 @@ export function createControlPlane(config: ControlPlaneConfig): ControlPlane {
   operations.reconcileAfterRestart();
   operations.project();
   const apply = new M9ApplyService(database, config, review, operations, gate);
-  const ui = new M6UiService(database, orchestrator, (principal, taskId) => review.snapshotForTask(principal, taskId), gate);
+  const routing = new M10RoutingService(database, operations);
+  const ui = new M6UiService(database, orchestrator, (principal, taskId) => review.snapshotForTask(principal, taskId), gate, (principal, taskId) => routing.isConfirmedForDispatch(principal, taskId), (principal, taskId) => routing.assertConfirmedForDispatch(principal, taskId));
   const loginBuckets = new Map<string, LoginBucket>();
   const loginBucketExpiries: LoginBucketExpiry[] = [];
   let loginBucketGeneration = 0;
@@ -122,9 +124,45 @@ export function createControlPlane(config: ControlPlaneConfig): ControlPlane {
   review.setTransitionPublisher(publishTaskEvent);
   operations.setPublisher(publishTaskEvent);
   apply.setPublisher(publishTaskEvent);
+  routing.setPublisher(publishTaskEvent);
   app.get("/v1/ui/snapshot", async (request, reply) => {
     const principal = principalFor(request); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request));
-    return { ...ui.snapshot(principal), operations: operations.status(), applies: apply.snapshot(principal), applyIncidents: apply.incidents(principal), csrfToken: principal.csrfToken };
+    return { ...ui.snapshot(principal), operations: operations.status(), applies: apply.snapshot(principal), applyIncidents: apply.incidents(principal), routing: routing.snapshot(principal), csrfToken: principal.csrfToken };
+  });
+  app.get<{ Params: { taskId: string } }>("/v1/ui/tasks/:taskId/routing", async (request, reply) => {
+    const principal = principalFor(request); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request));
+    try { return { inputs: routing.inputs(principal, request.params.taskId), ...routing.snapshot(principal, request.params.taskId) }; } catch (error) { return m6Failure(error, request, reply); }
+  });
+  app.post<{ Params: { taskId: string }; Body: Record<string, unknown> }>("/v1/ui/tasks/:taskId/routing/recommendations", async (request, reply) => {
+    const principal = principalFor(request); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request));
+    try { return reply.code(201).send(routing.generate(principal, request.params.taskId, request.body)); } catch (error) { return m6Failure(error, request, reply); }
+  });
+  app.post<{ Params: { taskId: string; recommendationId: string }; Body: Record<string, unknown> }>("/v1/ui/tasks/:taskId/routing/recommendations/:recommendationId/confirm", async (request, reply) => {
+    const principal = principalFor(request); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request));
+    try { return routing.confirm(principal, request.params.taskId, request.params.recommendationId, request.body); } catch (error) { return m6Failure(error, request, reply); }
+  });
+  app.post<{ Params: { taskId: string; recommendationId: string }; Body: Record<string, unknown> }>("/v1/ui/tasks/:taskId/routing/recommendations/:recommendationId/reject", async (request, reply) => {
+    const principal = principalFor(request); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request));
+    try { return routing.reject(principal, request.params.taskId, request.params.recommendationId, request.body); } catch (error) { return m6Failure(error, request, reply); }
+  });
+  app.post<{ Params: { taskId: string }; Body: Record<string, unknown> }>("/v1/ui/tasks/:taskId/routing/refresh", async (request, reply) => {
+    const principal = principalFor(request); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request));
+    try { return reply.code(201).send(routing.generate(principal, request.params.taskId, request.body)); } catch (error) { return m6Failure(error, request, reply); }
+  });
+  app.get<{ Params: { taskId: string } }>("/v1/ui/tasks/:taskId/routing/fallback", async (request, reply) => {
+    const principal = principalFor(request); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request));
+    try { return routing.fallback(principal, request.params.taskId); } catch (error) { return m6Failure(error, request, reply); }
+  });
+  app.post<{ Params: { taskId: string; fallbackId: string }; Body: Record<string, unknown> }>("/v1/ui/tasks/:taskId/routing/fallback/:fallbackId/confirm", async (request, reply) => {
+    const principal = principalFor(request); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request));
+    try { return routing.confirmFallback(principal, request.params.taskId, request.params.fallbackId, request.body); } catch (error) { return m6Failure(error, request, reply); }
+  });
+  app.get("/v1/ui/routing/observations", async (request, reply) => {
+    const principal = principalFor(request); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request)); return routing.snapshot(principal);
+  });
+  app.put<{ Params: { projectId: string }; Body: Record<string, unknown> }>("/v1/ui/projects/:projectId/routing-policy", async (request, reply) => {
+    const principal = principalFor(request); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request));
+    try { return routing.updatePolicy(principal, request.params.projectId, request.body); } catch (error) { return m6Failure(error, request, reply); }
   });
   app.post<{ Body: Record<string, unknown> }>("/v1/ui/tasks", async (request, reply) => {
     const principal = principalFor(request); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request));
@@ -302,5 +340,5 @@ export function createControlPlane(config: ControlPlaneConfig): ControlPlane {
     const serialized = JSON.stringify(message);
     for (const socket of browserSockets) if (socket.readyState === socket.OPEN && socket.bufferedAmount < config.websocketMessageLimit * 4) socket.send(serialized, () => undefined);
   };
-  return Object.freeze({ app, database, auth, review, operations, apply, emitEvent, close: async () => { await app.close(); database.close(); } });
+  return Object.freeze({ app, database, auth, review, operations, apply, routing, emitEvent, close: async () => { await app.close(); database.close(); } });
 }

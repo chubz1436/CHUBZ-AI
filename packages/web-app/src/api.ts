@@ -38,3 +38,9 @@ export const acknowledgeIncident = (incidentId: string, body: Record<string, unk
 export const checkApplyEligibility = (body: Record<string, unknown>): Promise<Record<string, unknown>> => request("/v1/ui/apply/eligibility", { method: "POST", body: JSON.stringify(body) });
 export const createApplyPlan = (body: Record<string, unknown>): Promise<Record<string, unknown>> => request("/v1/ui/apply-plans", { method: "POST", body: JSON.stringify(body) });
 export const mutateApply = (applyId: string, action: "prepare" | "promote" | "cancel", body: Record<string, unknown>): Promise<Record<string, unknown>> => request(`/v1/ui/apply/${encodeURIComponent(applyId)}/${action}`, { method: "POST", body: JSON.stringify(body) });
+export const mutateRouting = (taskId: string, action: "generate" | "confirm" | "reject", body: Record<string, unknown>, recommendationId?: string): Promise<Record<string, unknown>> => {
+  const base = `/v1/ui/tasks/${encodeURIComponent(taskId)}/routing/recommendations`;
+  const path = action === "generate" ? base : `${base}/${encodeURIComponent(recommendationId ?? "invalid")}/${action}`;
+  return request(path, { method: "POST", body: JSON.stringify(body) });
+};
+export const confirmRoutingFallback = (taskId: string, fallbackId: string, body: Record<string, unknown>): Promise<Record<string, unknown>> => request(`/v1/ui/tasks/${encodeURIComponent(taskId)}/routing/fallback/${encodeURIComponent(fallbackId)}/confirm`, { method: "POST", body: JSON.stringify(body) });

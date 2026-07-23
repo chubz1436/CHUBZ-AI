@@ -501,6 +501,167 @@ const migrations: readonly Migration[] = [
       WHEN OLD.promotion_result_json IS NOT NULL
       BEGIN SELECT RAISE(ABORT, 'finalized promotion evidence is immutable'); END;
   ` },
+  { version: 10, sql: `
+    CREATE TABLE m10_routing_policies (
+      policy_id TEXT PRIMARY KEY,
+      owner_id TEXT NOT NULL REFERENCES administrators(id),
+      project_id TEXT NOT NULL,
+      version INTEGER NOT NULL DEFAULT 1,
+      policy_json TEXT NOT NULL,
+      policy_digest TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(owner_id,project_id)
+    );
+    CREATE TABLE m10_quota_observations (
+      observation_id TEXT PRIMARY KEY,
+      worker_id TEXT NOT NULL,
+      adapter_id TEXT NOT NULL,
+      state TEXT NOT NULL CHECK(state IN ('available','constrained','exhausted','unknown','unavailable')),
+      confidence TEXT NOT NULL CHECK(confidence IN ('high','medium','low','unknown')),
+      source TEXT NOT NULL CHECK(source IN ('provider-reported','adapter-observed','inferred','owner-attested','unknown')),
+      observed_at TEXT NOT NULL,
+      expires_at TEXT,
+      reset_at TEXT,
+      remaining INTEGER,
+      limitation TEXT,
+      observation_json TEXT NOT NULL,
+      observation_digest TEXT NOT NULL UNIQUE
+    );
+    CREATE INDEX m10_quota_latest_idx ON m10_quota_observations(worker_id,adapter_id,observed_at DESC);
+    CREATE TRIGGER m10_quota_immutable_update BEFORE UPDATE ON m10_quota_observations BEGIN SELECT RAISE(ABORT, 'quota observation is immutable'); END;
+    CREATE TRIGGER m10_quota_immutable_delete BEFORE DELETE ON m10_quota_observations BEGIN SELECT RAISE(ABORT, 'quota observation is immutable'); END;
+    CREATE TABLE m10_health_observations (
+      observation_id TEXT PRIMARY KEY,
+      worker_id TEXT NOT NULL,
+      adapter_id TEXT NOT NULL,
+      outcome TEXT NOT NULL,
+      source TEXT NOT NULL,
+      observed_at TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      evidence_json TEXT NOT NULL,
+      observation_digest TEXT NOT NULL UNIQUE
+    );
+    CREATE INDEX m10_health_latest_idx ON m10_health_observations(worker_id,adapter_id,observed_at DESC);
+    CREATE TABLE m10_routing_requests (
+      routing_request_id TEXT PRIMARY KEY,
+      owner_id TEXT NOT NULL REFERENCES administrators(id),
+      project_id TEXT NOT NULL,
+      task_id TEXT NOT NULL REFERENCES tasks(task_id),
+      attempt_id TEXT NOT NULL REFERENCES task_attempts(attempt_id),
+      operation_id TEXT NOT NULL,
+      expected_task_version INTEGER NOT NULL,
+      input_json TEXT NOT NULL,
+      input_digest TEXT NOT NULL,
+      risk_class TEXT NOT NULL CHECK(risk_class IN ('low','medium','high','owner-only')),
+      risk_reasons_json TEXT NOT NULL,
+      policy_rules_json TEXT NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('pending','recommended','no-eligible-route','confirmed','rejected','stale')),
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(owner_id,task_id,attempt_id,operation_id,input_digest)
+    );
+    CREATE INDEX m10_request_owner_task_idx ON m10_routing_requests(owner_id,task_id,created_at DESC);
+    CREATE TABLE m10_candidate_evaluations (
+      evaluation_id TEXT PRIMARY KEY,
+      routing_request_id TEXT NOT NULL REFERENCES m10_routing_requests(routing_request_id),
+      worker_id TEXT NOT NULL,
+      adapter_id TEXT NOT NULL,
+      rank INTEGER NOT NULL,
+      eligible INTEGER NOT NULL CHECK(eligible IN (0,1)),
+      score INTEGER NOT NULL,
+      evaluation_json TEXT NOT NULL,
+      evaluation_digest TEXT NOT NULL UNIQUE,
+      created_at TEXT NOT NULL,
+      UNIQUE(routing_request_id,worker_id,adapter_id)
+    );
+    CREATE TABLE m10_recommendations (
+      recommendation_id TEXT PRIMARY KEY,
+      routing_request_id TEXT NOT NULL UNIQUE REFERENCES m10_routing_requests(routing_request_id),
+      owner_id TEXT NOT NULL REFERENCES administrators(id),
+      project_id TEXT NOT NULL,
+      task_id TEXT NOT NULL REFERENCES tasks(task_id),
+      attempt_id TEXT NOT NULL REFERENCES task_attempts(attempt_id),
+      operation_id TEXT NOT NULL,
+      recommendation_version TEXT NOT NULL,
+      input_digest TEXT NOT NULL,
+      quota_digest TEXT NOT NULL,
+      selected_worker_id TEXT,
+      selected_adapter_id TEXT,
+      risk_class TEXT NOT NULL,
+      recommendation_json TEXT NOT NULL,
+      recommendation_digest TEXT NOT NULL UNIQUE,
+      status TEXT NOT NULL CHECK(status IN ('generated','no-eligible-route','confirmed','rejected','stale')),
+      generated_at TEXT NOT NULL,
+      finalized_at TEXT NOT NULL
+    );
+    CREATE TRIGGER m10_recommendation_finalized_guard BEFORE UPDATE OF recommendation_json,recommendation_digest,input_digest,quota_digest,selected_worker_id,selected_adapter_id,recommendation_version ON m10_recommendations BEGIN SELECT RAISE(ABORT, 'finalized recommendation is immutable'); END;
+    CREATE TABLE m10_route_confirmations (
+      confirmation_id TEXT PRIMARY KEY,
+      recommendation_id TEXT NOT NULL UNIQUE REFERENCES m10_recommendations(recommendation_id),
+      owner_id TEXT NOT NULL REFERENCES administrators(id),
+      project_id TEXT NOT NULL,
+      task_id TEXT NOT NULL REFERENCES tasks(task_id),
+      attempt_id TEXT NOT NULL REFERENCES task_attempts(attempt_id),
+      operation_id TEXT NOT NULL,
+      selected_worker_id TEXT NOT NULL,
+      selected_adapter_id TEXT NOT NULL,
+      recommendation_version TEXT NOT NULL,
+      input_digest TEXT NOT NULL,
+      risk_class TEXT NOT NULL,
+      capability_scope_json TEXT NOT NULL,
+      quota_digest TEXT NOT NULL,
+      expected_task_version INTEGER NOT NULL,
+      emergency_state_digest TEXT NOT NULL,
+      confirmation_digest TEXT NOT NULL UNIQUE,
+      confirmed_at TEXT NOT NULL
+    );
+    CREATE TRIGGER m10_confirmation_immutable_update BEFORE UPDATE ON m10_route_confirmations BEGIN SELECT RAISE(ABORT, 'route confirmation is immutable'); END;
+    CREATE TRIGGER m10_confirmation_immutable_delete BEFORE DELETE ON m10_route_confirmations BEGIN SELECT RAISE(ABORT, 'route confirmation is immutable'); END;
+    CREATE TABLE m10_fallback_plans (
+      fallback_plan_id TEXT PRIMARY KEY,
+      routing_request_id TEXT NOT NULL REFERENCES m10_routing_requests(routing_request_id),
+      recommendation_id TEXT NOT NULL REFERENCES m10_recommendations(recommendation_id),
+      owner_id TEXT NOT NULL REFERENCES administrators(id),
+      project_id TEXT NOT NULL,
+      task_id TEXT NOT NULL REFERENCES tasks(task_id),
+      attempt_id TEXT NOT NULL REFERENCES task_attempts(attempt_id),
+      operation_id TEXT NOT NULL,
+      reason TEXT NOT NULL,
+      evidence_json TEXT NOT NULL,
+      options_json TEXT NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('proposed','confirmed','unavailable','stale')),
+      created_at TEXT NOT NULL,
+      confirmed_at TEXT,
+      UNIQUE(recommendation_id)
+    );
+    CREATE TABLE m10_routing_incidents (
+      incident_id TEXT PRIMARY KEY,
+      owner_id TEXT NOT NULL REFERENCES administrators(id),
+      project_id TEXT NOT NULL,
+      task_id TEXT,
+      recommendation_id TEXT,
+      condition TEXT NOT NULL,
+      evidence_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      UNIQUE(owner_id,condition,recommendation_id)
+    );
+    CREATE TABLE m10_mutations (
+      mutation_scope TEXT NOT NULL,
+      idempotency_key TEXT NOT NULL,
+      request_digest TEXT NOT NULL,
+      result_json TEXT,
+      recorded_at TEXT NOT NULL,
+      PRIMARY KEY(mutation_scope,idempotency_key)
+    );
+    CREATE TABLE m10_reconciliation_runs (
+      run_id TEXT PRIMARY KEY,
+      status TEXT NOT NULL,
+      summary_json TEXT NOT NULL,
+      started_at TEXT NOT NULL,
+      completed_at TEXT NOT NULL,
+      run_digest TEXT NOT NULL UNIQUE
+    );
+  ` },
 ];
 const checksum = (sql: string): string => createHash("sha256").update(sql).digest("hex");
 export class MigrationError extends Error { constructor() { super("Control Plane database migration failed."); this.name = "MigrationError"; } }
