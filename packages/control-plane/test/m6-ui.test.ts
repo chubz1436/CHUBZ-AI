@@ -96,10 +96,11 @@ describe("M6 authenticated UI API", () => {
 
   it("broadcasts authoritative task events and resumes from the persisted UI cursor", async () => {
     const control = fixture(); const auth = await authenticate(control); const address = await control.app.listen({ host: "127.0.0.1", port: 0 });
+    const baselineSequence = (control.database.connection.prepare("SELECT head_sequence FROM event_streams WHERE stream_id='ui-tasks'").get() as { head_sequence: number }).head_sequence;
     const event = new Promise<Record<string, unknown>>((resolve, reject) => { const socket = new WebSocket(`${address.replace("http", "ws")}/v1/ws`, { headers: { origin, cookie: auth.cookie } }); const timer = setTimeout(() => reject(new Error("event timeout")), 5_000); socket.on("message", (data) => { const value = JSON.parse(data.toString()) as Record<string, unknown>; if (value["messageKind"] === "task.event") { clearTimeout(timer); socket.close(); resolve(value); } }); socket.on("error", reject); });
     await new Promise((resolve) => setTimeout(resolve, 50));
     const created = await control.app.inject({ method: "POST", url: "/v1/ui/tasks", headers: headers(auth), payload: manualRequest("task-create:websocket-one") }); expect(created.statusCode).toBe(201);
-    const message = await event; expect(message["messageKind"]).toBe("task.event"); expect((message["payload"] as Record<string, unknown>)["sequence"]).toBe(1);
-    const snapshot = (await control.app.inject({ method: "GET", url: "/v1/ui/snapshot", headers: { cookie: auth.cookie } })).json() as { cursor: { streamId: string; lastConsumedSequence: number } }; expect(snapshot.cursor).toEqual({ streamId: "ui-tasks", lastConsumedSequence: 1, oldestRetainedSequence: 1 }); await control.close();
+    const message = await event; expect(message["messageKind"]).toBe("task.event"); expect((message["payload"] as Record<string, unknown>)["sequence"]).toBe(baselineSequence + 1);
+    const snapshot = (await control.app.inject({ method: "GET", url: "/v1/ui/snapshot", headers: { cookie: auth.cookie } })).json() as { cursor: { streamId: string; lastConsumedSequence: number } }; expect(snapshot.cursor).toEqual({ streamId: "ui-tasks", lastConsumedSequence: baselineSequence + 1, oldestRetainedSequence: 1 }); await control.close();
   });
 });

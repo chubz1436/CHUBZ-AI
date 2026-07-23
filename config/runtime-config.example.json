@@ -1,0 +1,43 @@
+{
+  "configVersion": 1,
+  "controlPlane": {
+    "host": "127.0.0.1",
+    "port": 4317,
+    "allowedOrigin": "http://127.0.0.1:4317",
+    "sessionSecretRef": "environment:CHUBZ_CONTROL_PLANE_SESSION_SECRET"
+  },
+  "bridge": {
+    "endpoint": "ws://127.0.0.1:4317/v1/bridge/ws",
+    "enrollmentIdentity": "local-bridge",
+    "heartbeatIntervalMs": 10000
+  },
+  "paths": {
+    "approvedManagedRoots": ["B:\\AI_Agent_folder"],
+    "managedDataRoot": "B:\\AI_Agent_folder\\CHUBZ-AI-Command-Center-runtime-data",
+    "databaseFile": "control-plane.sqlite",
+    "logsDirectory": "operational-logs",
+    "supportBundlesDirectory": "support-bundles",
+    "packagesDirectory": "release-packages"
+  },
+  "bounds": {
+    "logMaxBytes": 2097152,
+    "logRetentionFiles": 5,
+    "captureMaxBytes": 67108864,
+    "packageMaxBytes": 536870912,
+    "packageMaxFiles": 20000,
+    "supportBundleMaxBytes": 8388608,
+    "supportBundleMaxFiles": 128,
+    "storageWarningPercent": 85
+  },
+  "retention": {
+    "operationalLogDays": 14,
+    "resolvedAlertDays": 90,
+    "supportBundleDays": 30,
+    "packagingStagingHours": 24
+  },
+  "projects": [],
+  "display": {
+    "productName": "CHUBZ AI Command Center",
+    "environmentLabel": "Local MVP candidate"
+  }
+}

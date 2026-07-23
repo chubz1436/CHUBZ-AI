@@ -11,6 +11,9 @@ importers:
       '@eslint/js':
         specifier: ^9.31.0
         version: 9.39.5
+      esbuild:
+        specifier: ^0.28.1
+        version: 0.28.1
       eslint:
         specifier: ^9.31.0
         version: 9.39.5
@@ -69,6 +72,9 @@ importers:
 
   packages/local-bridge:
     dependencies:
+      '@chubz/control-plane':
+        specifier: workspace:*
+        version: link:../control-plane
       '@chubz/shared':
         specifier: workspace:*
         version: link:../shared
@@ -79,9 +85,6 @@ importers:
         specifier: ^8.21.1
         version: 8.21.1
     devDependencies:
-      '@chubz/control-plane':
-        specifier: workspace:*
-        version: link:../control-plane
       '@types/better-sqlite3':
         specifier: ^7.6.13
         version: 7.6.13

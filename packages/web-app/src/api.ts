@@ -44,3 +44,8 @@ export const mutateRouting = (taskId: string, action: "generate" | "confirm" | "
   return request(path, { method: "POST", body: JSON.stringify(body) });
 };
 export const confirmRoutingFallback = (taskId: string, fallbackId: string, body: Record<string, unknown>): Promise<Record<string, unknown>> => request(`/v1/ui/tasks/${encodeURIComponent(taskId)}/routing/fallback/${encodeURIComponent(fallbackId)}/confirm`, { method: "POST", body: JSON.stringify(body) });
+export const acknowledgeAlert = (alertId: string, body: Record<string, unknown>): Promise<Record<string, unknown>> => request(`/v1/ui/alerts/${encodeURIComponent(alertId)}/acknowledge`, { method: "POST", body: JSON.stringify(body) });
+export const generateOperationalArtifact = (kind: "diagnostics" | "support-bundles", body: Record<string, unknown>): Promise<Record<string, unknown>> => request(`/v1/ui/${kind}`, { method: "POST", body: JSON.stringify(body) });
+export const verifySupportBundle = (artifactId: string, body: Record<string, unknown>): Promise<Record<string, unknown>> => request(`/v1/ui/support-bundles/${encodeURIComponent(artifactId)}/verify`, { method: "POST", body: JSON.stringify(body) });
+export const verifyRuntimePackage = (body: Record<string, unknown>): Promise<Record<string, unknown>> => request("/v1/ui/runtime-packages/verify", { method: "POST", body: JSON.stringify(body) });
+export const previewRetention = (body: Record<string, unknown>): Promise<Record<string, unknown>> => request("/v1/ui/retention/preview", { method: "POST", body: JSON.stringify({ ...body, expectedVersion: 0, idempotencyKey: `retention-preview-${crypto.randomUUID()}` }) });

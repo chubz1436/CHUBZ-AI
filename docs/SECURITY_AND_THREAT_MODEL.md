@@ -1,10 +1,12 @@
 # Security and Threat Model
 
+> **M11 candidate security boundary (2026-07-23):** Runtime configuration is strict, loopback-only, secret-reference-only, path-contained, and link/reparse-point rejecting. The Windows bundle is staged atomically below `B:\AI_Agent_folder`, rejects unsafe entries, and is SHA-256 verified. PID records bind PID, executable, command digest, start time, and configuration digest; shutdown refuses stale or mismatched identities. Support evidence is bounded, sanitized, immutable, and hash-verified. The packaged Bridge still initiates the only Bridge connection and has no inbound listener. No install, service, registry, firewall, remote-access, automatic upgrade/rollback, push, or deployment authority exists. See [M11_OPERATIONS_PACKAGING_RELEASE.md](M11_OPERATIONS_PACKAGING_RELEASE.md).
+
 > **M9 candidate security boundary (2026-07-23):** Only complete integrity-verified M7 evidence for one exact reviewed commit is eligible. The outbound-only Bridge prepares in a canonical isolated worktree, rejects unsafe Git configuration/links/paths and checked-out target refs, runs only predeclared bounded validation, and promotes only through an owner-confirmed compare-and-swap ref update. Conflicts, stale refs, emergency stop, validation failure, and unknown outcomes fail closed. Owner working copies, push, deployment, force operations, automatic rollback, and M10+ behavior remain outside authority. See [M9_SAFE_APPLY_AND_PROMOTION.md](M9_SAFE_APPLY_AND_PROMOTION.md).
 
 > **M8 candidate clarification (2026-07-23):** Web emergency-stop activation and release require the authenticated sole administrator, strict Origin, CSRF, idempotency, owner/project binding, and current scope version. “Owner-initiated and never approval-gated” below means no worker grant is required; it does not mean unauthenticated. Activation persists before it is authoritative, fails closed when the Bridge is unavailable, revokes unconsumed queued authority, and requests cancellation without claiming success. The outbound-only Bridge serializes its final pre-spawn check with stop activation. Release is explicit and never auto-resumes work.
 
-> **CURRENT IMPLEMENTATION STATUS:** M1A-M8 accepted; bounded local-only M9 safe-apply candidate active and unaccepted; M10+ unauthorized.
+> **CURRENT IMPLEMENTATION STATUS:** M1A-M10 accepted; bounded local-only M11 operations/packaging candidate active and unaccepted; M12+ unauthorized.
 >
 > **Historical architecture status (2026-07-10 through D-027):** contract foundations only; runtime was not yet implemented.
 >

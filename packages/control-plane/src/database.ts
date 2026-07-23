@@ -662,11 +662,82 @@ const migrations: readonly Migration[] = [
       run_digest TEXT NOT NULL UNIQUE
     );
   ` },
+  { version: 11, sql: `
+    CREATE TABLE m11_component_versions (
+      component_id TEXT PRIMARY KEY,
+      runtime_version TEXT NOT NULL,
+      observed_at TEXT NOT NULL
+    );
+    CREATE TABLE m11_alerts (
+      alert_id TEXT PRIMARY KEY,
+      owner_id TEXT NOT NULL REFERENCES administrators(id),
+      project_id TEXT,
+      condition_key TEXT NOT NULL,
+      severity TEXT NOT NULL CHECK(severity IN ('info','warning','high','critical')),
+      source_condition TEXT NOT NULL,
+      evidence_json TEXT NOT NULL,
+      summary TEXT NOT NULL,
+      recommended_action TEXT NOT NULL,
+      state TEXT NOT NULL CHECK(state IN ('active','acknowledged','resolved')),
+      first_seen_at TEXT NOT NULL,
+      last_seen_at TEXT NOT NULL,
+      acknowledged_at TEXT,
+      acknowledged_by TEXT,
+      resolved_at TEXT,
+      resolution_evidence_json TEXT,
+      version INTEGER NOT NULL DEFAULT 1,
+      UNIQUE(owner_id, project_id, condition_key)
+    );
+    CREATE INDEX m11_alerts_owner_state_idx ON m11_alerts(owner_id,state,severity,last_seen_at);
+    CREATE TABLE m11_mutations (
+      mutation_scope TEXT NOT NULL,
+      idempotency_key TEXT NOT NULL,
+      request_digest TEXT NOT NULL,
+      result_json TEXT,
+      recorded_at TEXT NOT NULL,
+      PRIMARY KEY(mutation_scope,idempotency_key)
+    );
+    CREATE TABLE m11_runtime_artifacts (
+      artifact_id TEXT PRIMARY KEY,
+      owner_id TEXT NOT NULL REFERENCES administrators(id),
+      artifact_kind TEXT NOT NULL CHECK(artifact_kind IN ('release-package','support-bundle','diagnostics')),
+      file_name TEXT NOT NULL,
+      sha256 TEXT NOT NULL,
+      size_bytes INTEGER NOT NULL,
+      file_count INTEGER NOT NULL,
+      manifest_json TEXT NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('generated','verified','tampered','retained-metadata')),
+      created_at TEXT NOT NULL,
+      verified_at TEXT,
+      version INTEGER NOT NULL DEFAULT 1,
+      UNIQUE(owner_id,artifact_kind,file_name)
+    );
+    CREATE TABLE m11_reconciliation_runs (
+      run_id TEXT PRIMARY KEY,
+      trigger_kind TEXT NOT NULL,
+      summary_json TEXT NOT NULL,
+      run_digest TEXT NOT NULL UNIQUE,
+      started_at TEXT NOT NULL,
+      completed_at TEXT NOT NULL
+    );
+    CREATE TABLE m11_retention_previews (
+      preview_id TEXT PRIMARY KEY,
+      owner_id TEXT NOT NULL REFERENCES administrators(id),
+      policy_digest TEXT NOT NULL,
+      candidates_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      applied_at TEXT,
+      result_json TEXT,
+      version INTEGER NOT NULL DEFAULT 1
+    );
+  ` },
 ];
 const checksum = (sql: string): string => createHash("sha256").update(sql).digest("hex");
 export class MigrationError extends Error { constructor() { super("Control Plane database migration failed."); this.name = "MigrationError"; } }
 
 export class ControlPlaneDatabase {
+  public static readonly latestSchemaVersion = 11;
   readonly connection: Database.Database;
   constructor(config: ControlPlaneConfig) {
     this.connection = new Database(config.databasePath);

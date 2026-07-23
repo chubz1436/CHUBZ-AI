@@ -1,8 +1,8 @@
 # CHUBZ AI Command Center
 
-> M10 implementation candidate active (2026-07-23): M1A-M9 are accepted on `main` at `df62ae84164ba8abffbaf9447d85f55de2332222`. The current branch adds deterministic recommendation-first routing, quota confidence, exact owner route confirmation, and plan-only fallback. Recommendations never dispatch or grant capability. M10 is not accepted until independent read-only review and owner acceptance; M11+ remains excluded. See [docs/M10_ROUTING_QUOTA_AND_FALLBACK.md](docs/M10_ROUTING_QUOTA_AND_FALLBACK.md).
+> M11 implementation candidate active (2026-07-23): M1A-M10 are accepted on `main` at `5bb492c5a107591d5c56da03b2b9919b3d0dfebc`. The current branch adds local operational status and alerts, an outbound-only packaged Bridge assembly, strict configuration, bounded Windows release packaging, process-safe operator commands, diagnostics/support evidence, retention, and upgrade planning. It does not install, deploy, push, expose remote access, or perform an upgrade. See [docs/M11_OPERATIONS_PACKAGING_RELEASE.md](docs/M11_OPERATIONS_PACKAGING_RELEASE.md).
 
-> **STATUS: M1A-M9 ACCEPTED; M10 ROUTING CANDIDATE ACTIVE, LOCAL-ONLY, AND UNACCEPTED**
+> **STATUS: M1A-M10 ACCEPTED; M11 OPERATIONS/PACKAGING CANDIDATE ACTIVE, LOCAL-ONLY, AND UNACCEPTED**
 
 CHUBZ AI Command Center is a local-first AI command ecosystem. M1A–M9 provide the accepted task, grant, Bridge, UI, evidence, recovery, emergency-stop, and exact reviewed-commit apply baseline. The M10 candidate adds owner-visible routing recommendations without automatic dispatch or fallback; remote access remains later and separately gated.
 
@@ -28,7 +28,7 @@ Santos is a separate worker and is not part of Antigravity, Claude Code / BUNSO,
 - Automatic Bridge Log records in Markdown suitable for Obsidian.
 - A future plug-in registry for adding workers without coupling them to the core.
 
-M1A through M9 are accepted on `main` at `df62ae84164ba8abffbaf9447d85f55de2332222`. The owner granted bounded M10 GO on July 23, 2026. The local M10 candidate is implemented on `task/m10-routing-quota-fallback`; it remains unaccepted pending independent review and owner acceptance. M11 and later remain excluded.
+M1A through M10 are accepted on `main` at `5bb492c5a107591d5c56da03b2b9919b3d0dfebc`. The owner granted bounded M11 GO on July 23, 2026. The local M11 candidate is implemented on `task/m11-operations-packaging-release`; it remains unaccepted pending independent review and owner acceptance. M12 and later remain excluded.
 
 ## Planning-only domain map
 
@@ -38,4 +38,4 @@ All other proposed subdomains are deferred. No DNS, hosting, tunnel, authenticat
 
 ## Start here
 
-Read [docs/PROJECT_OVERVIEW.md](docs/PROJECT_OVERVIEW.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/M10_ROUTING_QUOTA_AND_FALLBACK.md](docs/M10_ROUTING_QUOTA_AND_FALLBACK.md), and [docs/SAFETY_AND_APPROVALS.md](docs/SAFETY_AND_APPROVALS.md). The required next activity after the local M10 candidate commit and validation is an independent read-only M10 review.
+Read [docs/PROJECT_OVERVIEW.md](docs/PROJECT_OVERVIEW.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/M11_OPERATIONS_PACKAGING_RELEASE.md](docs/M11_OPERATIONS_PACKAGING_RELEASE.md), and [docs/SAFETY_AND_APPROVALS.md](docs/SAFETY_AND_APPROVALS.md). The required next activity after the local M11 candidate commit and validation is an independent read-only M11 review.

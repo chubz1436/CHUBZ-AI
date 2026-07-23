@@ -1,5 +1,9 @@
 # Architecture
 
+> **M11 candidate note (2026-07-23):** M1A-M10 are accepted on `main` at `5bb492c5a107591d5c56da03b2b9919b3d0dfebc`. M11 adds a loopback-only Control Plane/Web runtime, an outbound-only Local Bridge composition with the authoritative emergency gate at both Bridge admission and final process spawn, persistent evidence-backed alerts, strict versioned configuration, and an atomically staged hash-verifiable Windows bundle. Packaging adds no authority: installation, service registration, remote access, push, deployment, automatic upgrade, and rollback remain unavailable. See [M11_OPERATIONS_PACKAGING_RELEASE.md](M11_OPERATIONS_PACKAGING_RELEASE.md).
+
+> **CURRENT STATUS:** M1A-M10 accepted; bounded local-only M11 operations/packaging candidate active and unaccepted.
+
 > **M10 candidate note (2026-07-23):** M1A-M9 are accepted on `main` at `df62ae84164ba8abffbaf9447d85f55de2332222`. The Control Plane deterministically classifies risk, matches accepted adapter capabilities, records quota confidence, ranks recommendations, and requires an exact owner route confirmation before the separate M4 approval/grant flow. Fallback remains a plan requiring a new authoritative decision; no recommendation or confirmation dispatches work. See [M10_ROUTING_QUOTA_AND_FALLBACK.md](M10_ROUTING_QUOTA_AND_FALLBACK.md).
 
 > **M8 candidate note (2026-07-23):** Control Plane SQLite state and the independent Local Bridge operation journal remain authoritative. Bridge Log Markdown is a bounded, sanitized, rebuildable projection only. Persistent recovery incidents describe operational uncertainty without creating execution authority. Global/project emergency stops are authoritative Control Plane state and are rechecked by the outbound-only Bridge immediately before process spawn. Release never auto-resumes or retries blocked work. See [M8_RECOVERY_AND_EMERGENCY_CONTROLS.md](M8_RECOVERY_AND_EMERGENCY_CONTROLS.md).

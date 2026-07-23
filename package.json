@@ -1,6 +1,6 @@
 {
   "name": "chubz-ai-command-center",
-  "version": "0.1.0",
+  "version": "0.11.0-mvp.1",
   "private": true,
   "description": "CHUBZ AI Command Center local control plane, Bridge, contracts, and web interface",
   "packageManager": "pnpm@11.11.0",
@@ -12,10 +12,12 @@
     "test": "pnpm -r run test",
     "typecheck": "pnpm -r run typecheck",
     "build": "pnpm -r run build",
-    "lint": "pnpm -r run lint"
+    "lint": "pnpm -r run lint",
+    "package:m11": "node scripts/build-m11-release.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.31.0",
+    "esbuild": "^0.28.1",
     "eslint": "^9.31.0",
     "typescript-eslint": "^8.38.0"
   }

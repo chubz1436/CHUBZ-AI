@@ -27,10 +27,10 @@ describe("database foundation", () => {
     const root = mkdtempSync(join(tmpdir(), "chubz-control-plane-test-")); roots.push(root); const config = createTestConfig(root); const first = createControlPlane(config); const db = first.database.connection;
     expect((db.pragma("journal_mode", { simple: true }) as string).toLowerCase()).toBe("wal");
     expect(db.pragma("foreign_keys", { simple: true })).toBe(1);
-    expect((db.prepare("SELECT count(*) AS n FROM schema_migrations").get() as { n: number }).n).toBe(10);
+    expect((db.prepare("SELECT count(*) AS n FROM schema_migrations").get() as { n: number }).n).toBe(11);
     await first.close();
     const second = createControlPlane(config);
-    expect((second.database.connection.prepare("SELECT count(*) AS n FROM schema_migrations").get() as { n: number }).n).toBe(10);
+    expect((second.database.connection.prepare("SELECT count(*) AS n FROM schema_migrations").get() as { n: number }).n).toBe(11);
     await second.close();
   });
 });
@@ -74,6 +74,12 @@ describe("migration hardening", () => {
   const downgradeToV1 = (database: ControlPlaneDatabase): void => {
     const db = database.connection;
     db.exec(`
+      DROP TABLE m11_retention_previews;
+      DROP TABLE m11_reconciliation_runs;
+      DROP TABLE m11_runtime_artifacts;
+      DROP TABLE m11_mutations;
+      DROP TABLE m11_alerts;
+      DROP TABLE m11_component_versions;
       DROP TRIGGER m10_confirmation_immutable_delete;
       DROP TRIGGER m10_confirmation_immutable_update;
       DROP TRIGGER m10_recommendation_finalized_guard;
@@ -139,7 +145,7 @@ describe("migration hardening", () => {
       ALTER TABLE tasks DROP COLUMN current_operation_id;
       ALTER TABLE tasks DROP COLUMN created_at;
       ALTER TABLE tasks DROP COLUMN version;
-      DELETE FROM schema_migrations WHERE version IN (2, 3, 4, 5, 6, 7, 8, 9, 10);
+      DELETE FROM schema_migrations WHERE version IN (2, 3, 4, 5, 6, 7, 8, 9, 10, 11);
     `);
   };
   it("upgrades zero and one administrator databases but fails closed for multiple administrators", () => {
@@ -194,7 +200,7 @@ describe("keyed session and CSRF storage", () => {
   it("enforces absolute and idle expiry and rejects stale CSRF values", async () => {
     const control = fixture({ sessionTtlMs: 25, sessionIdleMs: 1_000 }); await control.app.ready();
     await control.app.inject({ method: "POST", url: "/v1/auth/bootstrap", headers: { origin, "content-type": "application/json" }, payload: { username: "owner", password: "correct-horse-battery-staple" } });
-    const login = await control.app.inject({ method: "POST", url: "/v1/auth/login", headers: { origin, "content-type": "application/json" }, payload: { username: "owner", password: "correct-horse-battery-staple" } }); const cookie = String(login.headers["set-cookie"]!); const csrf = (login.json() as { csrfToken: string }).csrfToken;
+    const login = await control.app.inject({ method: "POST", url: "/v1/auth/login", headers: { origin, "content-type": "application/json" }, payload: { username: "owner", password: "correct-horse-battery-staple" } }); const cookie = String(login.headers["set-cookie"]!);
     expect((await control.app.inject({ method: "POST", url: "/v1/auth/logout", headers: { origin, cookie, "x-csrf-token": "stale-token" } })).statusCode).toBe(403);
     await new Promise((resolve) => setTimeout(resolve, 35)); expect((await control.app.inject({ method: "GET", url: "/v1/session", headers: { cookie } })).statusCode).toBe(401); await control.close();
     const idle = fixture({ sessionTtlMs: 1_000, sessionIdleMs: 25 }); await idle.app.ready();

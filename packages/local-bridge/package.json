@@ -1,6 +1,6 @@
 {
   "name": "@chubz/local-bridge",
-  "version": "0.1.0",
+  "version": "0.11.0-mvp.1",
   "private": true,
   "type": "module",
   "main": "./src/index.ts",
@@ -12,12 +12,12 @@
     "test:real-m5": "tsx scripts/m5-real-canary.ts"
   },
   "dependencies": {
+    "@chubz/control-plane": "workspace:*",
     "@chubz/shared": "workspace:*",
     "better-sqlite3": "^12.5.0",
     "ws": "^8.21.1"
   },
   "devDependencies": {
-    "@chubz/control-plane": "workspace:*",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.15.3",
     "@types/ws": "^8.18.1",

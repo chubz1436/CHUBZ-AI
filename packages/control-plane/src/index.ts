@@ -10,6 +10,12 @@ export * from "./m6-ui.js";
 export * from "./m7-review.js";
 export * from "./m8-operations.js";
 export * from "./m9-apply.js";
+export * from "./m10-routing.js";
+export * from "./m11-config.js";
+export * from "./m11-artifacts.js";
+export * from "./m11-operations.js";
+export * from "./m11-runtime-manager.js";
+export * from "./m11-package.js";
 export * from "./orchestrator.js";
 
 if (process.argv[1]?.endsWith("index.ts")) {

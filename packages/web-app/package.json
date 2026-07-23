@@ -1,6 +1,6 @@
 {
   "name": "@chubz/web-app",
-  "version": "0.1.0",
+  "version": "0.11.0-mvp.1",
   "private": true,
   "type": "module",
   "scripts": {

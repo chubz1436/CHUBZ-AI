@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash, createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -19,9 +19,12 @@ import { M7ReviewService } from "./m7-review.js";
 import { M8OperationsService } from "./m8-operations.js";
 import { M9ApplyService } from "./m9-apply.js";
 import { M10RoutingService } from "./m10-routing.js";
+import { validateM11Configuration } from "./m11-config.js";
+import { M11ArtifactService } from "./m11-artifacts.js";
+import { M11OperationsService } from "./m11-operations.js";
 import { M4Orchestrator } from "./orchestrator.js";
 
-export type ControlPlane = Readonly<{ app: FastifyInstance; database: ControlPlaneDatabase; auth: AuthService; review: M7ReviewService; operations: M8OperationsService; apply: M9ApplyService; routing: M10RoutingService; close: () => Promise<void>; emitEvent: (streamId: string, message: ControlPlaneToClientMessage) => void }>;
+export type ControlPlane = Readonly<{ app: FastifyInstance; database: ControlPlaneDatabase; auth: AuthService; review: M7ReviewService; operations: M8OperationsService; apply: M9ApplyService; routing: M10RoutingService; operational: M11OperationsService; artifacts: M11ArtifactService; close: () => Promise<void>; emitEvent: (streamId: string, message: ControlPlaneToClientMessage) => void }>;
 const json = "application/json";
 const messageId = () => randomUUID();
 const now = () => new Date().toISOString();
@@ -53,6 +56,8 @@ export function createControlPlane(config: ControlPlaneConfig): ControlPlane {
   operations.project();
   const apply = new M9ApplyService(database, config, review, operations, gate);
   const routing = new M10RoutingService(database, operations);
+  const operational = new M11OperationsService(database, config);
+  const artifacts = new M11ArtifactService(database, config, operational);
   const ui = new M6UiService(database, orchestrator, (principal, taskId) => review.snapshotForTask(principal, taskId), gate, (principal, taskId) => routing.isConfirmedForDispatch(principal, taskId), (principal, taskId) => routing.assertConfirmedForDispatch(principal, taskId));
   const loginBuckets = new Map<string, LoginBucket>();
   const loginBucketExpiries: LoginBucketExpiry[] = [];
@@ -66,9 +71,10 @@ export function createControlPlane(config: ControlPlaneConfig): ControlPlane {
   };
   const app = Fastify({ logger: { level: config.logLevel }, bodyLimit: config.requestBodyLimit, genReqId: () => messageId() });
   const browserSockets = new Set<WebSocket>();
+  const bridgeSockets = new Set<WebSocket>();
   void app.register(cookie);
   void app.register(websocket, { options: { maxPayload: config.websocketMessageLimit } });
-  const webRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../web-app/dist");
+  const webRoot = process.env["CHUBZ_PACKAGED_WEB_ROOT"] ? resolve(process.env["CHUBZ_PACKAGED_WEB_ROOT"]) : resolve(dirname(fileURLToPath(import.meta.url)), "../../web-app/dist");
   if (existsSync(webRoot)) void app.register(fastifyStatic, { root: webRoot, prefix: "/", decorateReply: false, wildcard: false });
   app.addHook("onRequest", async (request, reply) => {
     const isWebAsset = request.url === "/" || request.url.startsWith("/assets/");
@@ -86,10 +92,10 @@ export function createControlPlane(config: ControlPlaneConfig): ControlPlane {
     }
   });
   app.setErrorHandler((error, request, reply) => { app.log.warn({ event: "request-error", requestId: reqId(request), detail: safeDetail(error instanceof Error ? error.message : undefined) }); return publicError(reply, 400, "INVALID_REQUEST", reqId(request)); });
-  app.get("/healthz", async () => ({ status: "ok" }));
+  app.get("/healthz", async () => ({ status: "ok", applicationVersion: process.env["CHUBZ_BUILD_VERSION"] ?? "0.11.0-mvp.1", buildCommit: process.env["CHUBZ_BUILD_COMMIT"] ?? "working-tree", releaseStatus: "local MVP candidate", localOnly: true }));
   app.get("/readyz", async (_request, reply) => {
     if (!database.isReady()) return publicError(reply, 503, "UNAVAILABLE", "readiness");
-    return { status: "ready", checks: { database: "ok", migrations: "ok", configuration: "ok", authentication: "ok", websocket: "ok" } };
+    return { status: "ready", checks: { database: "ok", migrations: "ok", configuration: "ok", authentication: "ok", websocket: "ok", bridgeGate: "required" }, schemaVersion: ControlPlaneDatabase.latestSchemaVersion, releaseStatus: "local MVP candidate" };
   });
   app.post<{ Body: { username?: unknown; password?: unknown } }>("/v1/auth/bootstrap", async (request, reply) => {
     if (!isOriginAllowed(request, config)) return publicError(reply, 403, "FORBIDDEN", reqId(request));
@@ -125,10 +131,28 @@ export function createControlPlane(config: ControlPlaneConfig): ControlPlane {
   operations.setPublisher(publishTaskEvent);
   apply.setPublisher(publishTaskEvent);
   routing.setPublisher(publishTaskEvent);
+  operational.reconcile();
+  operational.setPublisher((eventKind) => publishTaskEvent("m11-operations", eventKind));
+  artifacts.setPublisher((eventKind) => publishTaskEvent("m11-operations", eventKind));
   app.get("/v1/ui/snapshot", async (request, reply) => {
     const principal = principalFor(request); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request));
-    return { ...ui.snapshot(principal), operations: operations.status(), applies: apply.snapshot(principal), applyIncidents: apply.incidents(principal), routing: routing.snapshot(principal), csrfToken: principal.csrfToken };
+    return { ...ui.snapshot(principal), operations: operations.status(), applies: apply.snapshot(principal), applyIncidents: apply.incidents(principal), routing: routing.snapshot(principal), operational: operational.operationalSummary(principal), runtimeArtifacts: artifacts.metadata(principal), csrfToken: principal.csrfToken };
   });
+  app.get("/v1/ui/operations/summary", async (request, reply) => { const principal = principalFor(request); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request)); try { return operational.operationalSummary(principal); } catch (error) { return m6Failure(error, request, reply); } });
+  app.get<{ Querystring: { state?: string } }>("/v1/ui/alerts", async (request, reply) => { const principal = principalFor(request); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request)); try { operational.refreshAlerts(principal); return { alerts: operational.listAlerts(principal, request.query.state) }; } catch (error) { return m6Failure(error, request, reply); } });
+  app.get<{ Params: { alertId: string } }>("/v1/ui/alerts/:alertId", async (request, reply) => { const principal = principalFor(request); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request)); try { return operational.alert(principal, request.params.alertId); } catch (error) { return m6Failure(error, request, reply); } });
+  app.post<{ Params: { alertId: string }; Body: Record<string, unknown> }>("/v1/ui/alerts/:alertId/acknowledge", async (request, reply) => { const principal = principalFor(request); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request)); try { return operational.acknowledge(principal, request.params.alertId, request.body); } catch (error) { return m6Failure(error, request, reply); } });
+  app.get("/v1/ui/runtime-packages", async (request, reply) => { const principal = principalFor(request); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request)); return { artifacts: artifacts.metadata(principal) }; });
+  app.post<{ Body: Record<string, unknown> }>("/v1/ui/runtime-packages/verify", async (request, reply) => { const principal = principalFor(request); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request)); try { return artifacts.verifyPackage(principal, request.body); } catch (error) { return m6Failure(error, request, reply); } });
+  app.post<{ Body: Record<string, unknown> }>("/v1/ui/configuration/validate", async (request, reply) => { const principal = principalFor(request); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request)); return validateM11Configuration(request.body["configuration"]); });
+  app.post<{ Body: Record<string, unknown> }>("/v1/ui/diagnostics", async (request, reply) => { const principal = principalFor(request); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request)); try { return reply.code(201).send(artifacts.generate(principal, request.body, "diagnostics")); } catch (error) { return m6Failure(error, request, reply); } });
+  app.post<{ Body: Record<string, unknown> }>("/v1/ui/support-bundles", async (request, reply) => { const principal = principalFor(request); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request)); try { return reply.code(201).send(artifacts.generate(principal, request.body, "support-bundle")); } catch (error) { return m6Failure(error, request, reply); } });
+  app.post<{ Params: { artifactId: string }; Body: Record<string, unknown> }>("/v1/ui/support-bundles/:artifactId/verify", async (request, reply) => { const principal = principalFor(request); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request)); try { return artifacts.verifySupport(principal, request.params.artifactId, request.body); } catch (error) { return m6Failure(error, request, reply); } });
+  app.get<{ Params: { artifactId: string } }>("/v1/support-bundles/:artifactId", async (request, reply) => { const principal = principalFor(request); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request)); try { const value = artifacts.retrieve(principal, request.params.artifactId); return reply.header("Content-Type", "application/json; charset=utf-8").header("Content-Disposition", `attachment; filename="${String(value.metadata["fileName"])}"`).header("Digest", String(value.metadata["sha256"])).send(value.content); } catch (error) { return m6Failure(error, request, reply); } });
+  app.post<{ Body: Record<string, unknown> }>("/v1/ui/upgrade-plan", async (request, reply) => { const principal = principalFor(request); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request)); try { return artifacts.upgradePlan(principal, request.body); } catch (error) { return m6Failure(error, request, reply); } });
+  app.post<{ Body: Record<string, unknown> }>("/v1/ui/retention/preview", async (request, reply) => { const principal = principalFor(request); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request)); try { return artifacts.retentionPreview(principal, request.body); } catch (error) { return m6Failure(error, request, reply); } });
+  app.post<{ Body: Record<string, unknown> }>("/v1/ui/retention/apply", async (request, reply) => { const principal = principalFor(request); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request)); try { return artifacts.applyRetention(principal, request.body); } catch (error) { return m6Failure(error, request, reply); } });
+  app.get("/v1/ui/health", async (request, reply) => { const principal = principalFor(request); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request)); const summary = operational.operationalSummary(principal); return { health: (summary["metrics"] as Record<string, unknown>)["controlPlane"], readiness: database.isReady() ? "ready" : "unavailable", release: (summary["metrics"] as Record<string, unknown>)["version"] }; });
   app.get<{ Params: { taskId: string } }>("/v1/ui/tasks/:taskId/routing", async (request, reply) => {
     const principal = principalFor(request); if (!principal) return publicError(reply, 401, "UNAUTHORIZED", reqId(request));
     try { return { inputs: routing.inputs(principal, request.params.taskId), ...routing.snapshot(principal, request.params.taskId) }; } catch (error) { return m6Failure(error, request, reply); }
@@ -334,11 +358,27 @@ export function createControlPlane(config: ControlPlaneConfig): ControlPlane {
     });
     socket.on("close", () => { closed = true; browserSockets.delete(socket); }); socket.on("error", () => { closed = true; browserSockets.delete(socket); });
   });
+  app.get("/v1/bridge/ws", { websocket: true }, (socket, request) => {
+    const authorization = request.headers.authorization; const supplied = typeof authorization === "string" && authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
+    const expected = createHmac("sha256", config.sessionSecret).update("chubz.m11.bridge-session/v1\nlocal-bridge").digest("base64url"); const left = Buffer.from(supplied); const right = Buffer.from(expected);
+    if (left.byteLength !== right.byteLength || !timingSafeEqual(left, right)) { socket.close(1008, "bridge authentication required"); return; }
+    bridgeSockets.add(socket);
+    const connectedAt = now(); database.connection.prepare("UPDATE m8_bridge_state SET connection_state='connected',last_seen_at=?,updated_at=?,version=version+1 WHERE bridge_id='local-bridge'").run(connectedAt, connectedAt); publishTaskEvent("m11-operations", "bridge.connection-changed"); operational.refreshAlerts();
+    let closed = false;
+    socket.on("message", (raw: Buffer | string) => {
+      if (closed || Buffer.byteLength(raw) > 4_096) { socket.close(1009, "bridge heartbeat exceeds bound"); return; }
+      try { const value = JSON.parse(raw.toString()) as Record<string, unknown>; if (value["kind"] !== "bridge.heartbeat" || value["enrollmentIdentity"] !== "local-bridge" || typeof value["sentAt"] !== "string" || !Number.isFinite(Date.parse(value["sentAt"])) || typeof value["runtimeVersion"] !== "string" || !/^[0-9A-Za-z][0-9A-Za-z._-]{0,127}$/u.test(value["runtimeVersion"])) throw new Error("invalid heartbeat"); const at = now(); database.connection.transaction(() => { database.connection.prepare("UPDATE m8_bridge_state SET connection_state='connected',last_seen_at=?,updated_at=?,version=version+1 WHERE bridge_id='local-bridge'").run(at, at); database.connection.prepare("INSERT INTO m11_component_versions(component_id,runtime_version,observed_at) VALUES('local-bridge',?,?) ON CONFLICT(component_id) DO UPDATE SET runtime_version=excluded.runtime_version,observed_at=excluded.observed_at").run(value["runtimeVersion"], at); })(); socket.send(JSON.stringify({ kind: "bridge.heartbeat-accepted", receivedAt: at, emergencyStopGateRequired: true })); }
+      catch { socket.close(1008, "invalid bridge heartbeat"); }
+    });
+    const disconnected = (): void => { if (closed) return; closed = true; bridgeSockets.delete(socket); if (!database.connection.open) return; const at = now(); database.connection.prepare("UPDATE m8_bridge_state SET connection_state='disconnected',updated_at=?,version=version+1 WHERE bridge_id='local-bridge'").run(at); publishTaskEvent("m11-operations", "bridge.connection-changed"); operational.refreshAlerts(); };
+    socket.on("close", disconnected); socket.on("error", disconnected);
+  });
   });
   const emitEvent = (streamId: string, message: ControlPlaneToClientMessage): void => {
     const db = database.connection; db.transaction(() => { const stream = db.prepare("SELECT head_sequence FROM event_streams WHERE stream_id=?").get(streamId) as { head_sequence: number } | undefined; const sequence = (stream?.head_sequence ?? 0) + 1; if (!stream) db.prepare("INSERT INTO event_streams(stream_id,head_sequence,oldest_retained_sequence) VALUES(?,?,?)").run(streamId, sequence, 1); else db.prepare("UPDATE event_streams SET head_sequence=? WHERE stream_id=?").run(sequence, streamId); db.prepare("INSERT INTO events(stream_id,sequence,event_id,payload_json,occurred_at) VALUES(?,?,?,?,?)").run(streamId, sequence, message.messageId, JSON.stringify(message), now()); })();
     const serialized = JSON.stringify(message);
     for (const socket of browserSockets) if (socket.readyState === socket.OPEN && socket.bufferedAmount < config.websocketMessageLimit * 4) socket.send(serialized, () => undefined);
   };
-  return Object.freeze({ app, database, auth, review, operations, apply, routing, emitEvent, close: async () => { await app.close(); database.close(); } });
+  publishTaskEvent("m11-operations", "runtime.reconciliation-completed");
+  return Object.freeze({ app, database, auth, review, operations, apply, routing, operational, artifacts, emitEvent, close: async () => { for (const socket of bridgeSockets) socket.close(); for (const socket of browserSockets) socket.close(); await app.close(); database.close(); } });
 }

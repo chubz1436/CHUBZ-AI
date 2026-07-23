@@ -260,3 +260,10 @@ Decisions D-006 … D-018 correspond to proposals P-006 … P-018 in [FINAL_ARCH
 - **Status:** ACCEPTED BY OWNER
 - **Decision date:** 2026-07-20
 - **Decision:** The original custom CHUBZ AI Command Center architecture remains governing: the Control Plane and outbound-only Local Bridge are the core architecture. Hermes-style systems are UX and workflow references only; they do not replace the governing architecture.
+
+## M11 implementation authority note — 2026-07-23
+
+- **Status:** ACTIVE IMPLEMENTATION AUTHORITY; NOT AN ACCEPTANCE DECISION
+- **Accepted baseline:** M1A-M10 on `main` at `5bb492c5a107591d5c56da03b2b9919b3d0dfebc`.
+- **Authorized candidate:** bounded local operational dashboard/alerts, outbound-only runtime assembly, versioned safe configuration, Windows release packaging, safe process commands, diagnostics/support evidence, retention, and upgrade preparation on `task/m11-operations-packaging-release`.
+- **Boundary:** no installation, service/scheduled-task/registry/firewall change, remote access, production migration, automatic upgrade/rollback/push, deployment, credential change, or M12+ work. M11 remains unaccepted until independent read-only review and separate owner acceptance.

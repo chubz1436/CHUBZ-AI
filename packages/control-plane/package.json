@@ -1,6 +1,6 @@
 {
   "name": "@chubz/control-plane",
-  "version": "0.1.0",
+  "version": "0.11.0-mvp.1",
   "private": true,
   "type": "module",
   "main": "./src/index.ts",
@@ -9,7 +9,7 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "build": "tsc --noEmit",
-    "lint": "eslint src/app.ts src/auth.ts src/database.ts src/m6-ui.ts src/m7-review.ts src/m8-operations.ts src/m9-apply.ts src/m10-routing.ts src/orchestrator.ts test/m6-ui.test.ts test/m7-review.test.ts test/m8-operations.test.ts test/m9-apply.test.ts test/m10-routing.test.ts --max-warnings=0",
+    "lint": "eslint src test --max-warnings=0",
     "start": "tsx src/index.ts"
   },
   "dependencies": {

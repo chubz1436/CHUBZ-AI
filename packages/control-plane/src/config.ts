@@ -21,6 +21,18 @@ export type ControlPlaneConfig = Readonly<{
   loginBucketMaximum: number;
   authEventRetentionMs: number;
   authEventMaximum: number;
+  m11?: Readonly<{
+    logsDirectory: string;
+    supportBundlesDirectory: string;
+    packagesDirectory: string;
+    logMaxBytes: number;
+    logRetentionFiles: number;
+    supportBundleMaxBytes: number;
+    supportBundleMaxFiles: number;
+    packageMaxBytes: number;
+    packageMaxFiles: number;
+    storageWarningPercent: number;
+  }>;
 }>;
 
 export class ConfigurationError extends Error {

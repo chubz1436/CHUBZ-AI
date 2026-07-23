@@ -38,6 +38,12 @@ export type Snapshot = {
     policies: Array<Record<string, unknown>>;
     semantics: { recommendationIsDispatch: false; costIsEstimate: true; unknownQuotaIsAvailable: false; automaticFallback: false; executionUnknownFallback: false; manualRelayAssurance: string };
   };
+  operational: {
+    operationalVersion: string; generatedAt: string; releaseStatus: string;
+    metrics: Record<string, { value: unknown; confidence: "authoritative" | "observed" | "estimated" | "owner-attested" | "unknown" | "stale"; evidenceRefs: string[]; observedAt: string }>;
+    alerts: Array<{ alertId: string; projectId: string | null; conditionKey: string; severity: "info" | "warning" | "high" | "critical"; sourceCondition: string; state: "active" | "acknowledged" | "resolved"; firstSeenAt: string; lastSeenAt: string; acknowledgedAt: string | null; resolvedAt: string | null; version: number; summary: string; recommendedAction: string; acknowledgementResolvesCondition: false; evidence: { references: string[]; authority: string; observedAt: string } }>;
+  };
+  runtimeArtifacts: Array<Record<string, unknown>>;
 };
 
 export type ApiError = Error & { status?: number; code?: string };

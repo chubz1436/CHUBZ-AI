@@ -44,3 +44,12 @@ describe("M10 routing and quota surface", () => {
     expect(api).toContain("/routing/recommendations"); expect(api).toContain("/routing/fallback/"); expect(api).toContain('"generate" | "confirm" | "reject"'); expect(app).not.toContain("Automatic dispatch toggle"); expect(styles).toContain(".routing-candidates"); expect(styles).toContain("@media (max-width: 720px)");
   });
 });
+
+describe("M11 operational and release-readiness surface", () => {
+  it("renders confidence, critical labels, alert semantics, diagnostics, and safe local release limits accessibly", () => {
+    const app = readFileSync(new URL("./App.tsx", import.meta.url), "utf8"); const api = readFileSync(new URL("./api.ts", import.meta.url), "utf8"); const styles = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
+    expect(app).toContain("AUTHORITATIVE OPERATIONAL OVERVIEW"); expect(app).toContain("Every card states the evidence confidence"); expect(app).toContain("Unknown and stale are never promoted to healthy"); expect(app).toContain("Acknowledgement records owner awareness"); expect(app).toContain("Acknowledged; underlying condition is still active"); expect(app).toContain("Safe operator action"); expect(app).toContain("Generate diagnostics"); expect(app).toContain("Generate support bundle"); expect(app).toContain("Verify release package"); expect(app).toContain("Preview retention only"); expect(app).toContain("No installation or deployment"); expect(app).toContain("Upgrade readiness is evidence, not authority");
+    expect(api).toContain("/v1/ui/alerts/"); expect(api).toContain("/v1/ui/runtime-packages/verify"); expect(api).toContain("/v1/ui/support-bundles/"); expect(api).toContain("retention-preview-${crypto.randomUUID()}"); expect(app).toContain("disabled={pending}"); expect(styles).toContain(".severity-critical"); expect(styles).toContain(":focus-visible"); expect(styles).toContain("@media (max-width: 720px)");
+    expect(app).not.toContain("Deploy now"); expect(app).not.toContain("Automatic upgrade"); expect(app).not.toContain("Open terminal"); expect(app).not.toContain("Database editor");
+  });
+});

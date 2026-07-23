@@ -1,10 +1,12 @@
 # Safety and Approvals
 
+> **M11 candidate gate:** packaging, health, diagnostics, support, retention, and upgrade planning are operational evidence only. They do not authorize execution, installation, migration of an installed database, file replacement, service registration, remote access, push, deployment, upgrade, rollback, or restore. The packaged outbound-only Bridge retains M4 grants, journal-before-execution, M8 emergency stop at admission and spawn, M9 apply/promotion separation, and M10 route confirmation. See [M11_OPERATIONS_PACKAGING_RELEASE.md](M11_OPERATIONS_PACKAGING_RELEASE.md).
+
 > **M9 candidate gate:** apply planning, isolated preparation, and target promotion are distinct. Preparation consumes a short-lived one-use grant bound to one verified M7 package and expected target HEAD. Promotion requires a later owner confirmation bound to the prepared HEAD, validation evidence, package digest, target identity/ref, current version, and inactive emergency-stop state. No approval authorizes push, deployment, conflict resolution, retry of an unknown operation, or rollback. See [M9_SAFE_APPLY_AND_PROMOTION.md](M9_SAFE_APPLY_AND_PROMOTION.md).
 
 > **Historical M3 boundary (now accepted):** M3 authorized only outbound enrollment/connection, protected storage, journaling, process supervision, and managed clone/worktree foundations. Later accepted milestones added bounded orchestration, UI, evidence, and recovery while preserving the no-inbound-listener, no-remote-access, and no-deployment boundaries.
 
-> **STATUS: POLICY REFERENCE — M1A-M8 ACCEPTED; M9 SAFE APPLY CANDIDATE ACTIVE AND UNACCEPTED; M10+ UNAUTHORIZED.**
+> **STATUS: POLICY REFERENCE - M1A-M10 ACCEPTED; M11 OPERATIONS/PACKAGING CANDIDATE ACTIVE AND UNACCEPTED; M12+ UNAUTHORIZED.**
 
 The command center is planned around least privilege, visible intent, task isolation, and owner-controlled escalation.
 
